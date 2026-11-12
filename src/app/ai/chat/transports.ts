@@ -8,6 +8,7 @@ import type { ACPAgentID, AIProviderID } from '@open-pencil/core/constants'
 
 import { createLanguageModel } from '@/app/ai/chat/model'
 import SYSTEM_PROMPT from '@/app/ai/chat/system-prompt.md?raw'
+import { terminalLog } from '@/app/ai/chat/terminal-log'
 import { MAX_AGENT_STEPS, createAITools, recordStepUsage, resetRunSteps } from '@/app/ai/tools'
 import type { getActiveEditorStore } from '@/app/editor/active-store'
 
@@ -69,6 +70,15 @@ export function createToolLoopTransport({
   customAPIType,
   maxOutputTokens
 }: ToolLoopTransportOptions) {
+  terminalLog.log('[ai-chat] createToolLoopTransport', {
+    provider: providerID,
+    model: modelID,
+    customModel: customModelID || undefined,
+    customBaseURL: customBaseURL || undefined,
+    apiKeyLength: apiKey?.length ?? 0,
+    maxOutputTokens
+  })
+
   const tools = createAITools(store)
   const cacheProviderOptions = supportsAnthropicCaching(providerID, modelID)
     ? ANTHROPIC_CACHE_CONTROL
@@ -97,6 +107,12 @@ export function createToolLoopTransport({
       }
     },
     onStepFinish: ({ usage }) => {
+      terminalLog.log('[ai-chat] step finished', {
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.inputTokenDetails.cacheReadTokens,
+        cacheWriteTokens: usage.inputTokenDetails.cacheWriteTokens
+      })
       recordStepUsage(
         {
           inputTokens: usage.inputTokens ?? 0,
@@ -164,7 +180,14 @@ export function createChatSessionManager({
   }
 
   async function ensureChat(): Promise<Chat<UIMessage> | null> {
-    if (!isConfigured.value) return null
+    if (!isConfigured.value) {
+      terminalLog.warn('[ai-chat] ensureChat: not configured', {
+        provider: providerID.value,
+        hasApiKey: !!apiKey.value,
+        isACP: isACPProvider.value
+      })
+      return null
+    }
 
     const store = getActiveEditorStore()
     if (currentChatStore && chat) {
@@ -172,11 +195,23 @@ export function createChatSessionManager({
     }
 
     if (!chat || transportDirty || currentChatStore !== store) {
+      terminalLog.log('[ai-chat] ensureChat: building new chat', {
+        provider: providerID.value,
+        isACP: isACPProvider.value,
+        transportDirty,
+        storeChanged: currentChatStore !== store
+      })
       const messages = currentChatMessages.get(store)
       const transport: ChatTransport<UIMessage> = isACPProvider.value
         ? await createActiveACPTransport()
         : createTransport(store)
-      chat = new Chat<UIMessage>({ transport, messages })
+      chat = new Chat<UIMessage>({
+        transport,
+        messages,
+        onError: (error) => {
+          terminalLog.error('[ai-chat] chat error:', error)
+        }
+      })
       currentChatStore = store
       transportDirty = false
     }
