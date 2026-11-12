@@ -1,53 +1,35 @@
-import { defineTool, nodeSummary } from '#core/tools/schema'
+import * as v from 'valibot'
 
-export const booleanUnion = defineTool({
-  name: 'boolean_union',
-  mutates: true,
-  description: 'Union (combine) multiple nodes.',
-  params: {
-    ids: { type: 'string[]', description: 'Node IDs to union', required: true }
-  },
-  execute: (figma, { ids }) => {
-    const result = figma.booleanOperation('UNION', ids)
-    return nodeSummary(result)
-  }
-})
+import type { FigmaAPI } from '#core/figma-api'
+import { defineTool, nodeSummary, requireNodes, toolFailure } from '#core/tools/schema'
 
-export const booleanSubtract = defineTool({
-  name: 'boolean_subtract',
-  mutates: true,
-  description: 'Subtract the second node from the first.',
-  params: {
-    ids: { type: 'string[]', description: 'Node IDs (first minus rest)', required: true }
-  },
-  execute: (figma, { ids }) => {
-    const result = figma.booleanOperation('SUBTRACT', ids)
-    return nodeSummary(result)
+/** Combines the layers in the first one's parent, as Figma's boolean methods do. */
+function booleanOf(
+  figma: FigmaAPI,
+  ids: readonly string[],
+  operation: 'union' | 'subtract' | 'intersect' | 'exclude'
+) {
+  const nodes = requireNodes(figma, ids)
+  if (!nodes) return { error: 'One or more node IDs were not found' }
+  try {
+    return nodeSummary(figma[operation](nodes, nodes[0].parent ?? figma.currentPage))
+  } catch (error) {
+    return toolFailure(error)
   }
-})
+}
 
-export const booleanIntersect = defineTool({
-  name: 'boolean_intersect',
-  mutates: true,
-  description: 'Intersect multiple nodes.',
-  params: {
-    ids: { type: 'string[]', description: 'Node IDs to intersect', required: true }
-  },
-  execute: (figma, { ids }) => {
-    const result = figma.booleanOperation('INTERSECT', ids)
-    return nodeSummary(result)
-  }
-})
+export const booleanOperation = defineTool({
+  name: 'boolean',
 
-export const booleanExclude = defineTool({
-  name: 'boolean_exclude',
-  mutates: true,
-  description: 'Exclude (XOR) multiple nodes.',
-  params: {
-    ids: { type: 'string[]', description: 'Node IDs to exclude', required: true }
-  },
-  execute: (figma, { ids }) => {
-    const result = figma.booleanOperation('EXCLUDE', ids)
-    return nodeSummary(result)
-  }
+  description:
+    'Combine two or more nodes into a boolean group: union, subtract (the first minus the rest), intersect, or exclude.',
+  execution: { kind: 'sync', mutation: 'document' },
+  input: v.strictObject({
+    op: v.pipe(
+      v.picklist(['union', 'subtract', 'intersect', 'exclude']),
+      v.description('Boolean operation')
+    ),
+    ids: v.pipe(v.array(v.string()), v.minLength(2), v.description('Node IDs, first one on top'))
+  }),
+  execute: (figma, { op, ids }) => booleanOf(figma, ids, op)
 })

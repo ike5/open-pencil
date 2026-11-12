@@ -1,70 +1,166 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
+import { tv } from 'tailwind-variants'
+import { computed, useTemplateRef, watch } from 'vue'
 
-import Tip from '@/components/ui/Tip.vue'
-import { useTabsStore, createTab } from '@/app/tabs'
+import { useI18n } from '@open-pencil/vue/i18n'
+
+import { animationsEnabled } from '@/app/shell/motion'
+import { openNewFileTab, useTabsStore } from '@/app/tabs'
+import { DOCUMENT_KIND_ICONS } from '@/components/document/kinds'
+import PreparationIndicator from '@/components/preparation/tab/PreparationIndicator.vue'
+import { useScrollOverflow } from '@/components/ui/list/useScrollOverflow'
+import Tip from '@/components/ui/overlay/Tip.vue'
+import tabBarTheme from '@/theme/tab-bar'
+
+const { files } = useI18n()
 
 const { tabs, activeTabId, switchTab, closeTab } = useTabsStore()
+const tabBarStyles = tv(tabBarTheme)
+const baseStyles = tabBarStyles()
+
+const scroller = useTemplateRef<HTMLElement>('scroller')
+const { overflowing, overflowStart, overflowEnd, scrollTowardHidden } = useScrollOverflow(
+  scroller,
+  {
+    smooth: animationsEnabled
+  }
+)
+
+// Keep the active tab in view when it opens, when another one is chosen, and when the row starts
+// or stops overflowing, since the chevron that appears then narrows the visible row. Scrolling
+// alone never triggers it.
+watch(
+  [activeTabId, overflowing],
+  () => {
+    scroller.value?.querySelector('[data-slot="tab-item"][data-active]')?.scrollIntoView({
+      block: 'nearest',
+      inline: 'nearest',
+      behavior: animationsEnabled.value ? 'smooth' : 'auto'
+    })
+  },
+  { flush: 'post' }
+)
 
 const modelValue = computed({
   get: () => activeTabId.value,
   set: (id: string) => switchTab(id)
 })
 
-function onMiddleClick(e: MouseEvent, tabId: string) {
-  if (e.button === 1) {
+/** A New file tab, as Figma's + opens: what to create, and the recent files. */
+function createNewTab(event: MouseEvent): void {
+  event.preventDefault()
+  if (event.currentTarget instanceof HTMLElement) event.currentTarget.blur()
+  openNewFileTab()
+}
+
+function onMiddleClick(e: MouseEvent, tabId: string, isHome: boolean) {
+  if (e.button === 1 && !isHome) {
     e.preventDefault()
-    closeTab(tabId)
+    void closeTab(tabId)
   }
 }
 
 function onClose(e: MouseEvent, tabId: string) {
   e.stopPropagation()
-  closeTab(tabId)
+  void closeTab(tabId)
 }
 </script>
 
 <template>
   <TabsRoot
-    v-if="tabs.length > 1"
+    v-if="tabs.length > 0"
     v-model="modelValue"
+    data-slot="tab-bar"
     activation-mode="automatic"
-    class="scrollbar-none flex h-9 shrink-0 items-end overflow-x-auto border-b border-border bg-canvas"
+    :class="baseStyles.root()"
   >
-    <TabsList class="flex h-full items-end">
-      <TabsTrigger
-        v-for="tab in tabs"
-        :key="tab.id"
-        :value="tab.id"
-        data-test-id="tabbar-tab"
-        class="group/tab flex h-full max-w-48 min-w-0 cursor-pointer items-center gap-1.5 border-r border-border px-3 text-xs transition-colors outline-none select-none focus-visible:ring-1 focus-visible:ring-accent data-[state=active]:bg-panel data-[state=active]:text-surface data-[state=inactive]:text-muted data-[state=inactive]:hover:text-surface"
-        @mousedown="onMiddleClick($event, tab.id)"
-      >
-        <icon-lucide-file class="size-3 shrink-0 opacity-50" />
-        <span class="min-w-0 flex-1 truncate">{{ tab.name }}</span>
-        <Tip :label="`Close ${tab.name}`">
-          <button
-            data-test-id="tabbar-close"
-            class="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded opacity-0 transition-opacity group-hover/tab:opacity-100 hover:bg-hover data-[state=active]:opacity-100"
-            :class="tab.isActive ? 'opacity-100' : ''"
-            :aria-label="`Close ${tab.name}`"
-            tabindex="-1"
-            @click="onClose($event, tab.id)"
+    <div
+      ref="scroller"
+      :class="baseStyles.scroller()"
+      :data-overflow-start="overflowStart || undefined"
+      :data-overflow-end="overflowEnd || undefined"
+    >
+      <TabsList :class="baseStyles.list()">
+        <div
+          v-for="tab in tabs"
+          :key="tab.id"
+          data-slot="tab-item"
+          :data-active="tab.isActive || undefined"
+          :class="tabBarStyles({ active: tab.isActive, home: tab.isHome }).item()"
+          @mousedown="onMiddleClick($event, tab.id, tab.isHome)"
+        >
+          <TabsTrigger
+            :value="tab.id"
+            data-test-id="tabbar-tab"
+            :class="tabBarStyles({ active: tab.isActive, home: tab.isHome }).trigger()"
+            :aria-label="tab.isHome ? files.home : undefined"
+            :data-active="tab.isActive || undefined"
+            :data-dirty="tab.isDirty || undefined"
           >
-            <icon-lucide-x class="size-3" />
-          </button>
-        </Tip>
-      </TabsTrigger>
-    </TabsList>
-    <Tip label="New tab">
+            <icon-lucide-house v-if="tab.isHome" :class="baseStyles.icon()" />
+            <PreparationIndicator v-else-if="tab.isPreparing" :progress="tab.preparationProgress" />
+            <component
+              :is="DOCUMENT_KIND_ICONS[tab.fileKind]"
+              v-else-if="tab.fileKind"
+              :class="baseStyles.icon()"
+            />
+            <icon-lucide-file v-else :class="baseStyles.icon()" />
+            <span v-if="!tab.isHome" :class="baseStyles.label()">{{
+              tab.isNewFile ? files.newFile : tab.name
+            }}</span>
+            <Tip v-if="tab.isDirty" :label="files.unsavedChanges" side="bottom">
+              <span role="img" :aria-label="files.unsavedChanges" :class="baseStyles.dirtyDot()" />
+            </Tip>
+          </TabsTrigger>
+          <Tip
+            v-if="!tab.isHome"
+            :label="files.closeTab({ name: tab.isNewFile ? files.newFile : tab.name })"
+            side="bottom"
+          >
+            <button
+              type="button"
+              data-test-id="tabbar-close"
+              :class="tabBarStyles({ active: tab.isActive }).close()"
+              :data-active="tab.isActive || undefined"
+              :aria-label="files.closeTab({ name: tab.isNewFile ? files.newFile : tab.name })"
+              tabindex="-1"
+              @click="onClose($event, tab.id)"
+            >
+              <icon-lucide-x :class="baseStyles.closeIcon()" />
+            </button>
+          </Tip>
+        </div>
+      </TabsList>
+    </div>
+    <!-- Sits beside the hidden tabs; it keeps its width when it switches sides, so the overflow never flips back.
+         Pointer affordance only: arrow keys move between tabs and the active tab scrolls into view. -->
+    <button
+      v-if="overflowStart || overflowEnd"
+      type="button"
+      tabindex="-1"
+      aria-hidden="true"
+      data-test-id="tabbar-scroll"
+      :class="baseStyles.scroll()"
+      :data-start="!overflowEnd || undefined"
+      @click="scrollTowardHidden"
+    >
+      <icon-lucide-chevron-right
+        v-if="overflowEnd"
+        data-direction="reading"
+        :class="baseStyles.scrollIcon()"
+      />
+      <icon-lucide-chevron-left v-else data-direction="reading" :class="baseStyles.scrollIcon()" />
+    </button>
+    <Tip :label="files.newFile" side="bottom">
       <button
+        type="button"
         data-test-id="tabbar-new"
-        class="flex size-9 shrink-0 cursor-pointer items-center justify-center text-muted transition-colors hover:text-surface"
-        aria-label="New tab"
-        @click="createTab()"
+        :aria-label="files.newFile"
+        :class="baseStyles.newTab()"
+        @click="createNewTab"
       >
-        <icon-lucide-plus class="size-3.5" />
+        <icon-lucide-plus :class="baseStyles.newIcon()" />
       </button>
     </Tip>
   </TabsRoot>

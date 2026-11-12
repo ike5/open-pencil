@@ -1,14 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { CanvasHelper } from '#tests/helpers/canvas'
+import { waitForDemo } from '#tests/helpers/demo'
 
-async function dragSlider(
-  page: Parameters<typeof test>[0]['page'],
-  canvas: CanvasHelper,
-  testId: string,
-  ratio: number
-) {
-  const slider = page.locator(`[data-test-id="${testId}"] input[type="range"]`)
+async function dragSlider(page: Page, canvas: CanvasHelper, testId: string, ratio: number) {
+  const slider = page.getByTestId(testId).getByRole('slider')
   const box = await slider.boundingBox()
   if (!box) throw new Error(`Missing slider: ${testId}`)
   const y = box.y + box.height / 2
@@ -21,17 +17,22 @@ async function dragSlider(
   await canvas.waitForRender()
 }
 
-async function selectDemoCard(page: Parameters<typeof test>[0]['page'], canvas: CanvasHelper) {
+async function selectDemoCard(page: Page, canvas: CanvasHelper) {
   await page.goto('/demo')
   await canvas.waitForInit()
+  await waitForDemo(page)
 
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     const nodes = Array.from(store.graph.nodes.values())
-    const card =
-      nodes.find((node) => node.name === 'Card' && node.type === 'COMPONENT') ??
-      nodes.find((node) => node.name === 'Card')
+    // The Lint chapter's button keeps a hard-coded fill on purpose, for the rules to find.
+    const card = nodes.find((node) => node.name === 'Frame 3' && node.type === 'FRAME')
+    let owner = card
+    while (owner && owner.type !== 'CANVAS') {
+      owner = owner.parentId ? store.graph.getNode(owner.parentId) : undefined
+    }
+    if (owner && owner.id !== store.state.currentPageId) await store.switchPage(owner.id)
     if (!card)
       throw new Error(
         `Card not found. Available: ${nodes
@@ -39,16 +40,16 @@ async function selectDemoCard(page: Parameters<typeof test>[0]['page'], canvas: 
           .map((n) => `${n.name}:${n.type}`)
           .join(', ')}`
       )
-    store.state.selectedIds = new Set([card.id])
-    store.requestRender()
+    store.select([card.id])
   })
   await canvas.waitForRender()
 
-  await expect(page.locator('[data-test-id="design-panel-single"]')).toBeVisible()
-  await expect(page.locator('[data-test-id="design-node-header"]')).toContainText('Card')
+  const designPanel = page.getByTestId('design-panel-single')
+  await expect(designPanel).toBeVisible()
+  await expect(designPanel.getByRole('heading', { name: 'Frame 3' })).toBeVisible()
 }
 
-async function getSelectedFill(page: Parameters<typeof test>[0]['page']) {
+async function getSelectedFill(page: Page) {
   return page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
@@ -65,7 +66,7 @@ async function getSelectedFill(page: Parameters<typeof test>[0]['page']) {
   })
 }
 
-async function getSelectedFillOrThrow(page: Parameters<typeof test>[0]['page']) {
+async function getSelectedFillOrThrow(page: Page) {
   const selectedFill = await getSelectedFill(page)
   if (!selectedFill?.fill?.color) throw new Error('Selected node has no color fill')
   return selectedFill
@@ -88,8 +89,8 @@ test('demo card fill changes through color picker', async ({ page }) => {
 
   const before = await getSelectedFillOrThrow(page)
 
-  await page.locator('[data-test-id="fill-picker-swatch"]').first().click()
-  await expect(page.locator('[data-test-id="fill-picker-tab-solid"]')).toBeVisible()
+  await page.getByTestId('fill-picker-swatch').first().click()
+  await expect(page.getByTestId('fill-picker-tab-solid')).toBeVisible()
 
   await dragSlider(page, canvas, 'color-slider-hue', 0.7)
 
@@ -103,10 +104,10 @@ test('demo card fill changes from hsb saturation and brightness sliders', async 
   const canvas = new CanvasHelper(page)
   await selectDemoCard(page, canvas)
 
-  await page.locator('[data-test-id="fill-picker-swatch"]').first().click()
-  await expect(page.locator('[data-test-id="fill-picker-tab-solid"]')).toBeVisible()
+  await page.getByTestId('fill-picker-swatch').first().click()
+  await expect(page.getByTestId('fill-picker-tab-solid')).toBeVisible()
   await canvas.waitForRender()
-  await page.locator('[data-test-id="color-format-select"]').click()
+  await page.getByTestId('color-format-select').click()
   await page.getByRole('option', { name: 'HSB', exact: true }).click()
   await canvas.waitForRender()
 

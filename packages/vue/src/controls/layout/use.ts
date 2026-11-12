@@ -30,7 +30,9 @@ export function useLayout() {
     widthSizing,
     heightSizing,
     widthSizingOptions,
-    heightSizingOptions
+    heightSizingOptions,
+    aspectRatioLocked,
+    aspectRatioLockable
   } = createLayoutSelectionState(editor, panels)
 
   const {
@@ -41,10 +43,11 @@ export function useLayout() {
     commitHorizontalPadding,
     setVerticalPadding,
     commitVerticalPadding,
-    toggleIndividualPadding
+    toggleIndividualPadding,
+    cancelPaddingPreview
   } = createPaddingActions(editor, node)
 
-  const layoutActions = createLayoutActions({ editor, node, isFlex, isInAutoLayout })
+  const layoutActions = createLayoutActions({ editor, node })
 
   const { updateGridTrack, addTrack, removeTrack } = createGridTrackActions(editor, node)
 
@@ -60,11 +63,17 @@ export function useLayout() {
     heightSizing,
     widthSizingOptions,
     heightSizingOptions,
+    aspectRatioLocked,
+    aspectRatioLockable,
     alignGrid,
     showIndividualPadding,
     hasUniformPadding,
     hasSymmetricPadding,
     trackSizingOptions: createTrackSizingOptions(panels.value),
+    cancelPreview: () => {
+      cancelPaddingPreview()
+      layoutActions.cancelPreview()
+    },
     updateProp: layoutActions.updateProp,
     updateSizeLimit: layoutActions.updateSizeLimit,
     setSizeLimitToCurrent: layoutActions.setSizeLimitToCurrent,
@@ -72,8 +81,10 @@ export function useLayout() {
     addSizeLimit: layoutActions.addSizeLimit,
     removeSizeLimit: layoutActions.removeSizeLimit,
     commitProp: layoutActions.commitProp,
-    setWidthSizing: layoutActions.setWidthSizing,
-    setHeightSizing: layoutActions.setHeightSizing,
+    setAxisSizing: layoutActions.setAxisSizing,
+    updateAxisSize: layoutActions.updateAxisSize,
+    commitAxisSize: layoutActions.commitAxisSize,
+    toggleAspectRatioLock: layoutActions.toggleAspectRatioLock,
     setHorizontalPadding,
     commitHorizontalPadding,
     setVerticalPadding,

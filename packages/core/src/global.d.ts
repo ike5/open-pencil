@@ -10,15 +10,19 @@ interface Window {
   queryLocalFonts?(): Promise<FontData[]>
 }
 
-interface Uint8ArrayConstructor {
-  fromBase64(base64: string, options?: { alphabet?: 'base64' | 'base64url' }): Uint8Array
-}
-
-interface Uint8Array {
-  toBase64(options?: { alphabet?: 'base64' | 'base64url' }): string
-}
-
-declare module '*.md' {
+declare module '*?raw' {
   const content: string
   export default content
+}
+
+/** A file a Vite build serves and emits, as its URL (`runtime-assets/install.ts`). */
+declare module '*?url' {
+  const url: string
+  export default url
+}
+
+/** opencc-js types its converters only; a dictionary module is `key value…` entries joined by `|`. */
+declare module 'opencc-js/dict/TSCharacters' {
+  const entries: string
+  export default entries
 }

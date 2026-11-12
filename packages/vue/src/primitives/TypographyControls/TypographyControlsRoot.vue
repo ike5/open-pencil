@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { useTypography } from '#vue/controls/typography/use'
-
-import type { TypographyFontLoader } from '#vue/controls/typography/use'
 import type { AcceptableValue } from 'reka-ui'
+
+import { useTypography } from '#vue/controls/typography/use'
+import type { TypographyFontLoader } from '#vue/controls/typography/use'
 
 const { fontLoader } = defineProps<{
   fontLoader?: TypographyFontLoader
@@ -11,7 +11,7 @@ const { fontLoader } = defineProps<{
 const ctx = useTypography({ fontLoader })
 
 function onAlignChange(val: AcceptableValue) {
-  if (val) ctx.setAlign(val as 'LEFT' | 'CENTER' | 'RIGHT')
+  if (val) ctx.setAlign(val as 'LEFT' | 'CENTER' | 'RIGHT' | 'JUSTIFIED')
 }
 
 function onFormattingChange(val: AcceptableValue | AcceptableValue[]) {
@@ -21,24 +21,46 @@ function onFormattingChange(val: AcceptableValue | AcceptableValue[]) {
 const actions = {
   setFamily: ctx.setFamily,
   setWeight: ctx.setWeight,
+  setFace: ctx.setFace,
   setDirection: ctx.setDirection,
+  setVerticalAlign: ctx.setVerticalAlign,
+  setTextCase: ctx.setTextCase,
+  setTruncation: ctx.setTruncation,
+  setFontFeature: ctx.setFontFeature,
+  setListType: ctx.setListType,
+  setHangingList: ctx.setHangingList,
+  previewParagraphSpacing: ctx.previewParagraphSpacing,
+  setParagraphSpacing: ctx.setParagraphSpacing,
   updateProp: ctx.updateProp,
   commitProp: ctx.commitProp,
+  cancelProp: ctx.cancelProp,
   align: onAlignChange,
   formatting: onFormattingChange,
   toggleBold: ctx.toggleBold,
   toggleItalic: ctx.toggleItalic,
-  toggleDecoration: ctx.toggleDecoration
+  toggleDecoration: ctx.toggleDecoration,
+  previewAxis: ctx.previewAxis,
+  cancelAxis: ctx.cancelAxis,
+  setAxis: ctx.setAxis,
+  setOpticalSizeAuto: ctx.setOpticalSizeAuto
 }
 </script>
 
 <template>
   <slot
     :node="ctx.node"
-    :weights="ctx.weights"
+    :nodes="ctx.nodes"
+    :merged="ctx.merged"
+    :paragraph-spacing="ctx.paragraphSpacing"
+    :font-feature="ctx.fontFeature"
+    :faces="ctx.faces"
+    :face-name="ctx.faceName"
     :missing-fonts="ctx.missingFonts"
     :has-missing-fonts="ctx.hasMissingFonts"
     :active-formatting="ctx.activeFormatting"
+    :list-type="ctx.listType"
+    :axes="ctx.axes"
+    :optical-size-auto="ctx.opticalSizeAuto"
     :actions="actions"
   />
 </template>

@@ -1,8 +1,5 @@
-import {
-  TYPOGRAPHY_WEIGHTS,
-  createTypographyActions,
-  createTypographyState
-} from '#vue/controls/typography/actions'
+import { createTypographyActions, createTypographyState } from '#vue/controls/typography/actions'
+import { createTypographyAxes } from '#vue/controls/typography/axes'
 import { useEditor } from '#vue/editor/context'
 
 /**
@@ -28,11 +25,12 @@ export function useTypography(options: UseTypographyOptions = {}) {
   const editor = useEditor()
   const typographyState = createTypographyState(editor)
   const actions = createTypographyActions({ editor, ...typographyState, options })
+  const axes = createTypographyAxes(editor, typographyState.nodes)
 
   return {
     editor,
     ...typographyState,
-    weights: TYPOGRAPHY_WEIGHTS,
-    ...actions
+    ...actions,
+    ...axes
   }
 }

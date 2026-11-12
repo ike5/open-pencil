@@ -1,18 +1,39 @@
-import type { SceneGraph, SceneNode, Stroke } from '#core/scene-graph'
-import { copyStrokes } from '#core/scene-graph/copy'
+import type { SceneGraph, SceneNode, Stroke } from '@open-pencil/scene-graph'
+import { copyStroke } from '@open-pencil/scene-graph/copy'
+import { recordInstanceOverride } from '@open-pencil/scene-graph/instances'
 
-export function setFirstStrokeWeight(graph: SceneGraph, node: SceneNode, weight: number): void {
-  if (node.strokes.length === 0) return
-  const strokes = copyStrokes(node.strokes)
-  strokes[0].weight = weight
-  graph.updateNode(node.id, { strokes })
+/**
+ * Sets the weight of all of a node's strokes and the weight it keeps with none, as Figma's
+ * node-level `strokeWeight` does; see `SceneNode.strokeWeight`.
+ */
+export function setStrokeWeight(graph: SceneGraph, node: SceneNode, weight: number): void {
+  graph.updateNode(node.id, {
+    strokeWeight: weight,
+    strokes: node.strokes.map((stroke) => ({ ...copyStroke(stroke), weight }))
+  })
+  recordInstanceOverride(graph, node.id, ['strokes', 'strokeWeight'])
 }
 
-export function setFirstStrokeAlign(graph: SceneGraph, node: SceneNode, align: string): void {
-  if (node.strokes.length === 0) return
-  const strokes = copyStrokes(node.strokes)
-  strokes[0].align = align as Stroke['align']
-  graph.updateNode(node.id, { strokes })
+/** Sets the alignment of all of a node's strokes and the one it keeps with none. */
+export function setStrokeAlign(graph: SceneGraph, node: SceneNode, align: Stroke['align']): void {
+  graph.updateNode(node.id, {
+    strokeAlign: align,
+    strokes: node.strokes.map((stroke) => ({ ...copyStroke(stroke), align }))
+  })
+  recordInstanceOverride(graph, node.id, ['strokes', 'strokeAlign'])
+}
+
+/** Dashes the layer's strokes: the renderer reads each stroke's pattern, Figma the layer's. */
+export function setDashPattern(
+  graph: SceneGraph,
+  node: SceneNode,
+  pattern: readonly number[]
+): void {
+  graph.updateNode(node.id, {
+    dashPattern: [...pattern],
+    strokes: node.strokes.map((stroke) => ({ ...copyStroke(stroke), dashPattern: [...pattern] }))
+  })
+  recordInstanceOverride(graph, node.id, ['strokes', 'dashPattern'])
 }
 
 export function setIndependentStrokeWeight(
@@ -25,4 +46,5 @@ export function setIndependentStrokeWeight(
     [field]: value,
     independentStrokeWeights: true
   })
+  recordInstanceOverride(graph, nodeId, [field, 'independentStrokeWeights'])
 }

@@ -1,51 +1,69 @@
 ---
 layout: doc
-title: IA et automatisation
-description: Chaque opération dans OpenPencil est scriptable — chat IA, CLI, moteur de rendu JSX, serveur MCP, collaboration en temps réel.
+title: Automatisation et API
+description: AI, MCP, CLI, JSX et Figma Plugin API pour automatiser les designs.
 ---
 
-# IA et automatisation
+# Automatisation et API
 
-OpenPencil traite les fichiers de design comme des données. Chaque opération disponible dans l'éditeur — créer des formes, définir des remplissages, gérer l'auto-layout, exporter des assets — est aussi disponible depuis le terminal, depuis des agents IA, et depuis du code. Pas de plugins à installer, pas de clés API, pas de liste d'attente.
+OpenPencil traite les fichiers de design comme des données structurées. Les opérations de l’éditeur — créer des formes, modifier des remplissages, configurer la disposition automatique ou exporter des ressources — sont aussi disponibles via la CLI, des agents AI et des API.
 
-L'interface de l'éditeur et les interfaces d'automatisation utilisent le même moteur. Si vous pouvez le faire en cliquant, vous pouvez le faire en scriptant.
+## Chat avec l’AI
 
-## Chat IA
+L’assistant intégré exécute plus de 90 outils. Une instruction peut modifier les ombres de plusieurs boutons, créer un composant avec une variante sombre ou exporter tous les cadres d’une page à l’échelle 2×.
 
-L'assistant intégré a accès à 87 outils qui couvrent l'ensemble des fonctionnalités de l'éditeur. Décrivez ce que vous voulez en langage naturel — « ajouter une ombre portée de 16px à tous les boutons », « créer un composant carte avec une variante mode sombre », « exporter chaque frame de cette page en 2× ».
+[Chat avec l’AI →](./ai-chat)
 
-[Chat IA →](./ai-chat)
+## MCP
 
-## Collaboration
+Claude Code, Cursor, Windsurf et d’autres clients MCP peuvent utiliser les mêmes outils. Le serveur prend en charge stdio et HTTP avec des sessions indépendantes.
 
-Édition multijoueur en temps réel via WebRTC pair-à-pair. Pas de serveur, pas de compte. Partagez un lien de salle et éditez ensemble avec des curseurs en direct et le mode suivi. L'état du document se synchronise via CRDT, donc les modifications fusionnent automatiquement même avec des connexions instables.
-
-[Collaboration →](./collaboration)
-
-## Moteur de rendu JSX
-
-Décrivez une interface en JSX — la même syntaxe que les LLMs connaissent déjà grâce à React. Un seul appel peut créer un arbre de composants complet avec des frames, du texte, de l'auto-layout, des remplissages et des contours. Compact, déclaratif et diffable.
-
-Dans l'autre sens, exportez n'importe quelle sélection en JSX avec des classes Tailwind — utile pour le transfert au développement ou pour renvoyer des designs dans un LLM.
-
-[Moteur de rendu JSX →](./jsx-renderer)
+[Serveur MCP →](/programmable/mcp-server)
 
 ## CLI
 
-Inspectez, exportez et analysez des fichiers `.fig` sans ouvrir l'éditeur. Listez les pages, recherchez des nœuds, extrayez des tokens de design, rendez en PNG — le tout depuis le terminal avec une sortie JSON lisible par machine.
+La CLI examine, exporte et analyse les fichiers `.fig` sans ouvrir l’éditeur. Elle peut lister pages et objets, rechercher du contenu, extraire des variables de design et générer des PNG. `--json` facilite l’intégration avec la CI.
 
-Le CLI se connecte aussi à l'application de bureau en cours d'exécution via RPC, ce qui permet de scripter l'éditeur pendant que vous l'utilisez.
+La CLI se connecte aussi à l’application de bureau en cours d’exécution via RPC, ce qui permet de piloter l’éditeur par script pendant que vous l’utilisez : ouvrir, enregistrer et changer de document, annuler, modifier les réglages et appeler n’importe quel outil MCP.
 
-[Inspecter des fichiers](./cli/inspecting) · [Exporter](./cli/exporting) · [Analyser des designs](./cli/analyzing) · [Scripter](./cli/scripting)
+[CLI →](./cli/inspecting) · [Piloter l’application](/programmable/cli/app-control)
 
-## Serveur MCP
+## JSX
 
-Connectez Claude Code, Cursor, Windsurf ou tout client compatible MCP à OpenPencil. Le serveur expose 90 outils pour lire, créer et modifier des designs — les mêmes outils que le chat IA intégré utilise. Fonctionne via stdio ou HTTP avec support de sessions.
+Une interface peut être décrite de manière déclarative en JSX. Un seul appel crée un arbre complet de cadres, textes, dispositions, remplissages et contours.
 
-[Serveur MCP →](./mcp-server)
+Dans l’autre sens, OpenPencil exporte une sélection en JSX ou HTML avec des classes Tailwind, comme point de départ pour l’implémentation ou la revue de code.
 
-## Pourquoi ouvert ?
+[Moteur JSX →](./jsx-renderer)
 
-Figma est une plateforme fermée. Leur serveur MCP est en lecture seule. L'accès via CDP au navigateur a été supprimé dans la version 126. Les fichiers de design sont stockés dans un format propriétaire sur les serveurs de quelqu'un d'autre. Le développement de plugins nécessite un runtime personnalisé avec des API limitées.
+## Figma Plugin API
 
-OpenPencil est l'alternative : open source, sous licence MIT, chaque opération scriptable, données stockées localement. Vos fichiers de design vous appartiennent — inspectez-les, transformez-les, intégrez-les dans votre CI, envoyez-les à un LLM. Aucune permission nécessaire.
+La commande `eval` exécute JavaScript avec un objet global `figma` compatible. Elle permet d’interroger et modifier des documents, puis d’enregistrer le résultat.
+
+[Scripting avec `eval` →](./cli/scripting)
+
+## Schéma d’URL {#url-scheme}
+
+L’application de bureau enregistre `openpencil://` : une page publiée — une story Storybook, une revue de design, un README — peut ainsi pointer directement vers un calque :
+
+```
+openpencil://open?file=web/design/hikyo.pen&node=Button/Large/Default
+```
+
+`file` est un chemin relatif au dépôt se terminant par `.pen` ou `.fig` ; les chemins absolus et les segments `.` ou `..` sont refusés. `node` est facultatif. Les deux valeurs sont encodées en URL — les séparateurs de chemin peuvent rester littéraux, mais un `+` littéral doit être envoyé sous la forme `%2B` — et une clé répétée prend sa dernière valeur.
+
+L’application compare `file` aux chemins des onglets ouverts, comme une séquence complète de segments finaux, et active cet onglet sans relire le document ; un fichier déplacé ou devenu illisible depuis son ouverture voit donc tout de même son calque sélectionné. Le premier onglet ouvert dont le chemin se termine par le chemin demandé l’emporte, ce qui compte lorsque deux copies de travail ont le même fichier ouvert. Les segments sont comparés comme le fait le système de fichiers de la plateforme : sans tenir compte de la casse ASCII sous macOS et Windows, exactement sous Linux ; `Web/Design/hikyo.pen` et `web/design/hikyo.pen` désignent donc le même fichier sur un Mac et deux fichiers différents sous Linux. Si aucun onglet ouvert ne correspond, un sélecteur de fichier demande une seule fois le fichier ; le fichier choisi doit se terminer par le même chemin relatif, sinon le lien est annulé. Aucun chemin n’est joint à une racine et aucun accès au système de fichiers n’est accordé au-delà de ce que renvoie le sélecteur. Un fichier réellement ouvert par le lien — celui qui a été choisi — rejoint la liste des fichiers récents comme tout autre fichier que vous ouvrez ; activer un onglet déjà ouvert ne touche pas à la liste, car rien n’a été ouvert.
+
+Avec un nom d’objet, l’application sélectionne tous les calques portant exactement ce nom sur la page courante et zoome sur l’ensemble de la sélection. Si la page courante n’en contient aucun, elle bascule sur la première page qui en contient, en chargeant les pages si nécessaire. Un nom inconnu affiche un avis et laisse le document ouvert. Ouvrir un fichier et sélectionner des calques est tout ce que le schéma sait faire.
+
+L’application web accepte le même lien depuis sa propre barre d’adresse :
+
+```
+https://app.openpencil.dev/?file=https://raw.githubusercontent.com/open-pencil/open-pencil/master/tests/fixtures/pencil_button.pen&node=Button/Large/Default
+```
+
+Ici, `file` est une URL `https:` absolue se terminant par `.pen` ou `.fig` — l’application web n’a pas de système de fichiers ; un chemin relatif, une URL `http:` ou toute autre extension est donc refusé avec un avertissement dans la console, sans autre effet. `node` se comporte exactement comme ci-dessus. Le navigateur récupère le fichier d’une autre origine : l’hôte doit l’autoriser (`raw.githubusercontent.com` envoie `Access-Control-Allow-Origin: *` et convient). La requête n’envoie aucun identifiant et refuse de suivre les redirections ; une URL `https://github.com/<owner>/<repo>/raw/...` est donc refusée, et il faut pointer directement vers l’hôte brut. `file` et `node` sont retirés de la barre d’adresse dès leur lecture, de sorte qu’un rechargement ne rouvre pas le document. Un document lié est limité à 64 Mio. Un déploiement qui sert l’application avec une Content-Security-Policy doit autoriser l’hôte lié dans `connect-src`.
+
+Sous macOS, le schéma appartient au bundle de l’application installée : les liens atteignent donc une version installée et non un processus `tauri dev`. Sous Windows et Linux, le lien arrive par le plugin de liens profonds, y compris lorsque l’application n’est pas encore lancée : il est mis en file d’attente au démarrage et traité dès que l’éditeur est prêt.
+
+OpenPencil est sous licence MIT et conserve les documents localement. Les fichiers `.fig` peuvent être examinés, transformés, traités en CI ou fournis comme contexte à un modèle sans dépendre d’un hébergeur particulier.

@@ -1,25 +1,9 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, useEditorSetup } from '#tests/e2e/fixtures'
 
-import { CanvasHelper } from '#tests/helpers/canvas'
-
-let page: Page
-let canvas: CanvasHelper
-
-test.describe.configure({ mode: 'serial' })
-
-test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage()
-  await page.goto('/demo')
-  canvas = new CanvasHelper(page)
-  await canvas.waitForInit()
-})
-
-test.afterAll(async () => {
-  await page.close()
-})
+const editor = useEditorSetup('/demo')
 
 function layerRows() {
-  return page.locator('[data-node-id]')
+  return editor.page.locator('[data-node-id]')
 }
 
 async function getLayerNames(): Promise<string[]> {
@@ -40,17 +24,19 @@ interface SceneTreeNode {
 }
 
 async function getSceneTree(): Promise<SceneTreeNode> {
-  return page.evaluate(() => {
+  return editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
-    if (!store) return null
+    if (!store) throw new Error('OpenPencil store not initialized')
 
-    function nodeTree(id: string): SceneTreeNode | null {
+    const nodeTree = (id: string): SceneTreeNode | null => {
       const node = store.graph.getNode(id)
       if (!node) return null
       return {
         name: node.name,
         type: node.type,
-        children: node.childIds.map((cid: string) => nodeTree(cid)).filter(Boolean)
+        children: node.childIds
+          .map((cid: string) => nodeTree(cid))
+          .filter((child): child is SceneTreeNode => child !== null)
       }
     }
     const tree = nodeTree(store.state.currentPageId)
@@ -60,65 +46,89 @@ async function getSceneTree(): Promise<SceneTreeNode> {
 }
 
 async function getSelectedCount(): Promise<number> {
-  return page.evaluate(() => {
+  return editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     return store.state.selectedIds.size
   })
 }
 
+const NUMBERED_GROUP = /^Group \d+$/
+
 test('demo layers visible in panel', async () => {
   const names = await getLayerNames()
-  expect(names).toContain('Components')
-  expect(names).toContain('App Preview')
+  const sections = (await getSceneTree()).children.map((child) => child.name)
+  expect(sections.length).toBeGreaterThan(0)
+  for (const name of sections) expect(names).toContain(name)
 })
 
 test('clicking a node inside a frame does not reparent it', async () => {
-  const beforeTree = await getSceneTree()
-  const section = beforeTree.children.find((c) => c.name === 'App Preview')
-  const dashboard = section?.children.find((c) => c.name === 'Dashboard')
-  expect(dashboard).toBeTruthy()
-  const sidebarBefore = dashboard?.children.find((c) => c.name === 'Sidebar')
-  expect(sidebarBefore).toBeTruthy()
+  const target = await editor.page.evaluate(() => {
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    const nodes = [...store.graph.nodes.values()]
+    const root = nodes.find((node) => node.name === '1 · Hello')
+    const nested = nodes.find((node) => node.name === 'Hero' && node.parentId === root?.id)
+    if (!root || !nested?.parentId) throw new Error('Demo Hello chapter not found')
+    const origin = store.graph.getAbsolutePosition(nested.id)
+    return {
+      id: nested.id,
+      parentId: nested.parentId,
+      rootId: root.id,
+      x: (origin.x + nested.width / 2) * store.state.zoom + store.state.panX,
+      y: (origin.y + nested.height / 2) * store.state.zoom + store.state.panY
+    }
+  })
 
-  // Click inside the App Preview section area
-  await canvas.click(350, 310)
-  await canvas.waitForRender()
+  // Click inside the nested frame hierarchy.
+  await editor.canvas.click(target.x, target.y)
+  await editor.canvas.waitForRender()
 
-  // Sidebar should still be a child of Dashboard
-  const afterTree = await getSceneTree()
-  const afterSection = afterTree.children.find((c) => c.name === 'App Preview')
-  const afterDashboard = afterSection?.children.find((c) => c.name === 'Dashboard')
-  expect(afterDashboard?.children.find((c) => c.name === 'Sidebar')).toBeTruthy()
+  const after = await editor.page.evaluate(
+    ({ id, rootId }) => {
+      const store = window.openPencil?.getStore?.()
+      if (!store) throw new Error('OpenPencil store not initialized')
+      return {
+        parentId: store.graph.getNode(id)?.parentId ?? null,
+        rootParentId: store.graph.getNode(rootId)?.parentId ?? null,
+        pageId: store.state.currentPageId
+      }
+    },
+    { id: target.id, rootId: target.rootId }
+  )
 
-  canvas.assertNoErrors()
+  // The clicked node and its section must keep their place in the hierarchy.
+  expect(after.parentId).toBe(target.parentId)
+  expect(after.rootParentId).toBe(after.pageId)
+
+  editor.canvas.assertNoErrors()
 })
 
 test('creating a shape updates layers', async () => {
   const before = await getLayerNames()
-  await canvas.drawRect(600, 500, 50, 50)
+  await editor.canvas.drawRect(600, 500, 50, 50)
   const names = await getLayerNames()
-  expect(names).toContain('Rectangle')
+  expect(names).toContain('Rectangle 1')
   expect(names.length).toBe(before.length + 1)
 
-  await canvas.undo()
+  await editor.canvas.undo()
   const after = await getLayerNames()
   expect(after.length).toBe(before.length)
-  expect(after).not.toContain('Rectangle')
+  expect(after).not.toContain('Rectangle 1')
 })
 
 test('Shift+A wraps selection in auto-layout frame', async () => {
   // Draw two loose rectangles for this test
-  await canvas.drawRect(700, 600, 60, 60)
-  await canvas.drawRect(800, 600, 60, 60)
-  await canvas.selectAll()
+  await editor.canvas.drawRect(700, 600, 60, 60)
+  await editor.canvas.drawRect(800, 600, 60, 60)
+  await editor.canvas.selectAll()
   const count = await getSelectedCount()
   expect(count).toBeGreaterThanOrEqual(2)
 
   const before = await getLayerNames()
 
-  await page.keyboard.press('Shift+A')
-  await canvas.waitForRender()
+  await editor.page.keyboard.press('Shift+A')
+  await editor.canvas.waitForRender()
 
   const tree = await getSceneTree()
   const autoFrame = tree.children.find((c) => c.name === 'Frame' && c.type === 'FRAME')
@@ -128,119 +138,126 @@ test('Shift+A wraps selection in auto-layout frame', async () => {
   expect(after).not.toEqual(before)
   expect(after).toContain('Frame')
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
 test('grouping updates layers', async () => {
   // Undo the auto-layout to restore flat structure
-  await canvas.undo()
-  await canvas.undo()
-  await canvas.waitForRender()
+  await editor.canvas.undo()
+  await editor.canvas.undo()
+  await editor.canvas.waitForRender()
 
   // Draw two rects and group them
-  await canvas.drawRect(700, 600, 60, 60)
-  await canvas.drawRect(800, 600, 60, 60)
-  await canvas.selectAll()
+  await editor.canvas.drawRect(700, 600, 60, 60)
+  await editor.canvas.drawRect(800, 600, 60, 60)
+  await editor.canvas.selectAll()
 
-  await page.keyboard.press('Meta+g')
-  await canvas.waitForRender()
+  await editor.page.keyboard.press('Meta+g')
+  await editor.canvas.waitForRender()
 
+  // The canvas numbers a group past the highest "Group" number on the page, as Figma does.
   const tree = await getSceneTree()
-  const group = tree.children.find((c) => c.name === 'Group' && c.type === 'GROUP')
+  const group = tree.children.find((c) => NUMBERED_GROUP.test(c.name) && c.type === 'GROUP')
   expect(group).toBeTruthy()
 
   const names = await getLayerNames()
-  expect(names).toContain('Group')
+  expect(names.some((name) => NUMBERED_GROUP.test(name))).toBe(true)
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
 test('ungrouping updates layers', async () => {
-  await page.keyboard.press('Shift+Meta+g')
-  await canvas.waitForRender()
+  await editor.page.keyboard.press('Shift+Meta+g')
+  await editor.canvas.waitForRender()
 
   const names = await getLayerNames()
-  expect(names).not.toContain('Group')
-  expect(names).toContain('Rectangle')
+  expect(names.some((name) => NUMBERED_GROUP.test(name))).toBe(false)
+  expect(names.some((name) => /^Rectangle \d+$/.test(name))).toBe(true)
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
 test('double-click layer to rename', async () => {
-  await canvas.drawRect(900, 600, 50, 50)
-  await canvas.waitForRender()
+  await editor.canvas.drawRect(900, 600, 50, 50)
+  await editor.canvas.waitForRender()
 
   const row = layerRows().filter({ hasText: 'Rectangle' }).first()
   await row.dblclick()
 
-  const input = page.locator('[data-test-id="layers-item-input"]')
+  const input = editor.page.getByTestId('layers-item-input')
   await expect(input).toBeVisible()
   await input.fill('Renamed Layer')
   await input.press('Enter')
 
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
   const names = await getLayerNames()
   expect(names).toContain('Renamed Layer')
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
 test('clicking outside rename input commits', async () => {
   const row = layerRows().filter({ hasText: 'Renamed Layer' }).first()
   await row.dblclick()
 
-  const input = page.locator('[data-test-id="layers-item-input"]')
+  const input = editor.page.getByTestId('layers-item-input')
   await expect(input).toBeVisible()
   await input.fill('After Outside Click')
 
-  await page.mouse.click(500, 400)
-  await canvas.waitForRender()
+  await editor.page.mouse.click(500, 400)
+  await editor.canvas.waitForRender()
 
   await expect(input).not.toBeVisible()
   const names = await getLayerNames()
   expect(names).toContain('After Outside Click')
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
-test('clearing a layer name falls back to the default node name', async () => {
-  await canvas.drawRect(980, 600, 50, 50)
-  await canvas.waitForRender()
+test('clearing a layer name keeps the name it had', async () => {
+  await editor.canvas.drawRect(980, 600, 50, 50)
+  await editor.canvas.waitForRender()
 
-  const row = layerRows().filter({ hasText: 'Rectangle' }).last()
+  const drawn = await editor.page.evaluate(() => {
+    const store = window.openPencil?.getStore?.()
+    const id = store ? [...store.state.selectedIds][0] : undefined
+    return id ? (store?.graph.getNode(id)?.name ?? '') : ''
+  })
+  const row = layerRows().filter({ hasText: drawn }).last()
   const countBefore = await layerRows().count()
 
   await row.dblclick()
 
-  const input = page.locator('[data-test-id="layers-item-input"]')
+  const input = editor.page.getByTestId('layers-item-input')
   await expect(input).toBeVisible()
   await input.clear()
   await input.press('Enter')
 
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
   const countAfter = await layerRows().count()
   expect(countAfter).toBe(countBefore)
 
   const names = await getLayerNames()
-  expect(names.filter((name) => name === 'Rectangle').length).toBeGreaterThan(0)
+  expect(drawn).toMatch(/^Rectangle \d+$/)
+  expect(names).toContain(drawn)
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })
 
 test('double-click does not toggle tree expand', async () => {
   const rowCountBefore = await layerRows().count()
 
-  const containerRow = layerRows().filter({ hasText: 'Components' }).first()
+  const containerRow = layerRows().filter({ hasText: '8 · Yours' }).first()
   await containerRow.dblclick()
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
-  const input = page.locator('[data-test-id="layers-item-input"]')
+  const input = editor.page.getByTestId('layers-item-input')
   await expect(input).toBeVisible()
   await input.press('Escape')
 
   const rowCountAfter = await layerRows().count()
   expect(rowCountAfter).toBe(rowCountBefore)
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })

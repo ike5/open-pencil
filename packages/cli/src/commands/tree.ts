@@ -3,8 +3,9 @@ import { defineCommand } from 'citty'
 
 import type { TreeNodeResult, TreeResult } from '@open-pencil/core/rpc'
 
+import { appTargetOptions } from '#cli/app/target'
 import { fmtTree, printError, entity, formatType } from '#cli/format'
-import { loadRpcData } from '#cli/rpc-data'
+import { loadRPCData } from '#cli/rpc-data'
 
 function toAgentfmtTree(node: TreeNodeResult, maxDepth: number, depth = 0): TreeNode {
   const treeNode: TreeNode = {
@@ -26,13 +27,19 @@ export default defineCommand({
     },
     page: { type: 'string', description: 'Page name (default: first page)' },
     depth: { type: 'string', description: 'Max depth (default: unlimited)' },
+    ...appTargetOptions,
     json: { type: 'boolean', description: 'Output as JSON' }
   },
   async run({ args }) {
-    const data = await loadRpcData<TreeResult | { error: string }>(args.file, 'tree', {
-      page: args.page,
-      depth: args.depth ? Number(args.depth) : undefined
-    })
+    const data = await loadRPCData<TreeResult | { error: string }>(
+      args.file,
+      'tree',
+      {
+        page: args.page,
+        depth: args.depth ? Number(args.depth) : undefined
+      },
+      args
+    )
     const maxDepth = args.depth ? Number(args.depth) : Infinity
 
     if ('error' in data) {

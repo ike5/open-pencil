@@ -1,32 +1,34 @@
 ---
-title: Navigazione canvas
-description: Panoramica, zoom e strumento mano in OpenPencil.
+title: Navigazione nell’area di lavoro
+description: Spostare la vista, usare lo zoom e lo strumento Mano.
 ---
 
-# Navigazione canvas
+# Navigazione nell’area di lavoro
 
-Il canvas è il tuo spazio di lavoro infinito.
+L’area di lavoro è illimitata. Spostamento e zoom permettono di raggiungere qualsiasi parte del documento.
 
-## Panoramica
+## Spostare la vista
 
-- <kbd>Spazio</kbd> + trascinamento — tieni <kbd>Spazio</kbd> e trascina
-- **Pulsante centrale del mouse** — premi e trascina
-- **Trackpad a due dita** — scorri con due dita
+- Tieni premuto <kbd>Space</kbd> e trascina.
+- Trascina con il pulsante centrale del mouse.
+- Scorri con due dita sul trackpad.
 
-## Strumento mano
+## Strumento Mano
 
-Premi <kbd>H</kbd> per attivare lo strumento mano. Passa a un altro strumento (es. **V**) per disattivare.
+Premi <kbd>H</kbd>. Finché è attivo, qualsiasi trascinamento sposta la vista senza tenere premuto <kbd>Space</kbd>. Premi <kbd>V</kbd> per tornare a Selezione.
 
 ## Zoom
 
-- <kbd>Ctrl</kbd> + scroll (o <kbd>⌘</kbd> + scroll su Mac) — zoom avanti/indietro
-- **Gesto pinch** — pinch sul trackpad
-- Scorciatoie da tastiera — vedi tabella
+Lo zoom è centrato sul puntatore. Usa <kbd>Ctrl</kbd>/<kbd>⌘</kbd> + rotella, il gesto di pizzicamento o le scorciatoie.
 
-| Azione | Mac | Windows / Linux |
-|--------|-----|-----------------|
-| Panoramica | <kbd>Spazio</kbd> + trascinamento | Spazio + trascinamento |
-| Strumento mano | <kbd>H</kbd> | <kbd>H</kbd> |
-| Zoom avanti | <kbd>⌘</kbd><kbd>+</kbd> | <kbd>Ctrl</kbd> + <kbd>+</kbd> |
-| Zoom indietro | <kbd>⌘</kbd><kbd>−</kbd> | <kbd>Ctrl</kbd> + <kbd>−</kbd> |
-| Zoom 100% | <kbd>⌘</kbd><kbd>0</kbd> | <kbd>Ctrl</kbd> + <kbd>0</kbd> |
+| Azione | macOS | Windows / Linux |
+|--------|-------|-----------------|
+| 100% | <kbd>⌘</kbd><kbd>0</kbd> | <kbd>Ctrl</kbd><kbd>0</kbd> |
+| Adatta documento | <kbd>⌘</kbd><kbd>1</kbd> | <kbd>Ctrl</kbd><kbd>1</kbd> |
+| Inquadra selezione | <kbd>⌘</kbd><kbd>2</kbd> | <kbd>Ctrl</kbd><kbd>2</kbd> |
+
+## Palette dei comandi
+
+Premi <kbd>⌘</kbd><kbd>K</kbd> su macOS o <kbd>Ctrl</kbd> + <kbd>K</kbd> su Windows/Linux per cercare azioni dell’editor e dell’applicazione. Seleziona un risultato per eseguirlo; le azioni non disponibili restano soggette alla selezione e allo stato del documento.
+
+La palette permette anche di passare da una pagina all’altra. Prima che tu scriva, elenca le pagine visitate di recente in questa scheda, dalla più recente, e **Vai alla pagina…** apre l’elenco di tutte le pagine. Anche digitare il nome di una pagina la trova. Le pagine in cui lavorano collaboratori o agenti AI ne riportano i nomi; il pannello Pagine le contrassegna con gli stessi colori.

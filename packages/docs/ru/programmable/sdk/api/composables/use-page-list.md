@@ -5,7 +5,7 @@ description: Чтение страниц и управление переклю�
 
 # usePageList
 
-`usePageList()` — компосабл управления страницами за UI списков страниц.
+`usePageList()` предоставляет состояние и действия, необходимые для списка страниц.
 
 Предоставляет:
 
@@ -19,7 +19,7 @@ description: Чтение страниц и управление переклю�
 ## Использование
 
 ```ts
-import { usePageList } from '@open-pencil/vue'
+import { usePageList } from '@open-pencil/vue/primitives/PageList'
 
 const pageList = usePageList()
 ```

@@ -14,35 +14,60 @@ The SDK is headless by design: it provides logic and structure, while your app o
 ## Install
 
 ```bash
-bun add @open-pencil/vue @open-pencil/core canvaskit-wasm
+bun add @open-pencil/vue @open-pencil/core @open-pencil/scene-graph @open-pencil/canvaskit
+```
+
+The current development version requires Vue `^3.5.41` and, when supplying the optional CanvasKit peer, `@open-pencil/canvaskit` of the same version as `@open-pencil/core`. See [SDK Getting Started](https://openpencil.dev/programmable/sdk/getting-started) for migration guidance; older releases may have different peer requirements.
+
+With Vite, add the plugin that serves the engine's WebAssembly and fonts; other bundlers set Core's locators instead (see the guide):
+
+```ts
+// vite.config.ts
+import vue from '@vitejs/plugin-vue'
+import { defineConfig } from 'vite'
+import { openPencil } from '@open-pencil/core/node/vite'
+
+export default defineConfig({ plugins: [vue(), openPencil()] })
 ```
 
 ## Quick start
 
 ```vue
 <script setup lang="ts">
-import { createEditor } from '@open-pencil/core/editor'
+import { reactive } from 'vue'
+import { createDefaultEditorState, createEditor } from '@open-pencil/core'
+import { SceneGraph } from '@open-pencil/scene-graph'
+import { CanvasRoot, CanvasSurface } from '@open-pencil/vue/canvas'
 import { provideEditor } from '@open-pencil/vue'
 
+const graph = new SceneGraph()
+const page = graph.getPages()[0]
+if (!page) throw new Error('Expected an initial page')
+
 const editor = createEditor({
-  width: 1200,
-  height: 800,
+  graph,
+  state: reactive(createDefaultEditorState(page.id)),
 })
 
 editor.createShape('RECTANGLE', 100, 100, 200, 150)
-editor.zoomToFit()
 
 provideEditor(editor)
 </script>
 
 <template>
   <div class="h-screen">
-    <CanvasRoot v-slot="{ canvasRef }">
-      <canvas ref="canvasRef" class="size-full" />
+    <CanvasRoot @ready="editor.zoomToFit()">
+      <CanvasSurface class="size-full" />
     </CanvasRoot>
   </div>
 </template>
 ```
+
+`CanvasRoot` draws the page and takes pointer input and typing: selecting, dragging, drawing with the active tool, panning and zooming, editing paths and text. Pass `:input="false"` for a canvas that only draws. Pass reactive state for Vue controls, while keeping the Scene Graph itself framework-neutral.
+
+## Entry points
+
+The root exports only the editor context: `provideEditor`, `useEditor`, and `EDITOR_KEY`. Everything else comes from the subpath named after its source folder, such as `@open-pencil/vue/canvas`, `@open-pencil/vue/controls/fill`, `@open-pencil/vue/editor/commands`, `@open-pencil/vue/primitives/NumberField`, and `@open-pencil/vue/i18n`; `package.json` lists them all.
 
 ## Core concepts
 
@@ -71,8 +96,11 @@ At the composable level, the main canvas APIs are:
 - `useCanvas()`
 - `useCanvasInput()`
 - `useTextEdit()`
+- `PlayIslands`
 
 If you want SDK-provided structure, use headless primitives like `CanvasRoot` and `CanvasSurface`.
+
+`PlayIslands` previews a canvas pane: place it over the canvas with the pane's view state, and while the pane's `play` state is set, each top-level layer holding components with behaviours runs as live Reka UI components in its own shadow root.
 
 ### Headless primitives
 
@@ -82,12 +110,32 @@ Main structural primitives include:
 - `LayerTreeRoot`
 - `PageListRoot`
 - `PropertyListRoot`
+- `PropertySectionRoot`
+- `SegmentedControlRoot`
 - `ToolbarRoot`
 - `ColorPickerRoot`
-- `FillPickerRoot`
 - `FontPickerRoot`
+- `NumberFieldRoot` / `NumberFieldInput` / `NumberFieldValue`
+- `BindableValueRoot` / `BindableValueTrigger` / `BindableValuePicker`
+- `LayoutControlsRoot`
+- `ConstraintsControlRoot`
 
-These components coordinate structure and state, but do not impose app styling.
+These components coordinate structure and state, but do not impose app styling. `NumberField`
+adds pointer scrubbing, Arrow-key stepping, mixed/bound state attributes, and safe arithmetic
+expressions such as `+10`, `*2`, `50%`, and `12*8+4`. `BindableValue` composes fields with a
+generic `BindingProvider` and supports detach-on-edit, read-only, and edit-variable policies.
+Focusing a bound NumberField is non-destructive; the configured policy begins only on the first
+value mutation. `LayoutControlsRoot` exposes axis-oriented sizing actions; editing a Hug or Fill
+dimension can switch that axis to Fixed inside the same provider transaction.
+`ConstraintsControlRoot` exposes eligible frame-child constraints, mixed axis values, pin actions,
+and undo-batched multi-selection updates. `AppearanceControlsRoot`
+exposes selection-derived independent-corner presentation state so consumers do not need parallel
+expansion heuristics. `PropertyListRoot` is controlled and
+editor-agnostic; OpenPencil panels connect it to selection and undo through
+`useEditorPropertyList()`. `useColorModel()` provides precise scene-color/Reka bridges, reactive
+RGB/HSL/HSB/OkHCL channels, extensible format state, and shared slider presentation data.
+`FillRoot` and `FillSwatch` separate fill behavior and binding-aware previews from popover
+composition; `ChannelSlider` provides accessible scalar OkHCL controls until Reka supports them.
 
 ## Public API tiers
 
@@ -114,7 +162,12 @@ These are the main APIs most SDK consumers should start with.
 
 - `usePosition()`
 - `useLayout()`
+- `useConstraints()`
+- `useComponentProperties()`
 - `useAppearance()`
+- `useSharedStyleBinding()`
+- `useColorModel()`
+- `useMask()`
 - `useTypography()`
 - `useExport()`
 - `useFillControls()`
@@ -123,7 +176,6 @@ These are the main APIs most SDK consumers should start with.
 
 #### Variables, navigation, and localization
 
-- `useVariablesEditor()`
 - `usePageList()`
 - `useI18n()`
 
@@ -133,22 +185,42 @@ These are the main APIs most SDK consumers should start with.
 - `LayerTreeRoot`
 - `PageListRoot`
 - `PropertyListRoot`
+- `PropertyListItem`
+- `PropertyListAdd` / `PropertyListRemove` / `PropertyListVisibility`
+- `PropertySectionRoot` / `PropertySectionHeader` / `PropertySectionTitle`
+- `PropertySectionActions` / `PropertySectionContent` / `PropertySectionEmptyAction`
+- `SegmentedControlRoot` / `SegmentedControlItem`
 - `ToolbarRoot`
+- `NumberFieldRoot`
+- `NumberFieldInput`
+- `NumberFieldValue`
+- `NumberFieldLeading`
+- `NumberFieldUnit`
+- `NumberFieldTrailing`
+- `NumberFieldMenu`
+- `BindableValueRoot`
+- `BindableValueTrigger`
+- `BindableValuePicker`
+- `FillRoot` / `FillSwatch`
+- `ChannelSliderRoot` / `ChannelSliderTrack` / `ChannelSliderThumb`
 
 ### Advanced API
 
 These exports are intentionally public, but they are lower-level or more specialized.
 
 - `useNodeProps()`
+- `useEditorPropertyList()`
 - `useSceneComputed()`
+- `useColorBindingProvider()`
 - `useColorVariableBinding()`
-- `useFillPicker()`
+- `provideBindingProvider()`
+- `useBindingProvider()`
+- `useNumberBindingProvider()`
+- `useFill()`
 - `useGradientStops()`
 - `useFontPicker()`
 - `useOkHCL()`
 - `useVariables()`
-- `useVariablesDialogState()`
-- `useVariablesTable()`
 - `usePropScrub()`
 - `useLayerDrag()`
 - `useInlineRename()`
@@ -167,7 +239,7 @@ These are mostly useful when extending SDK primitives rather than building from 
 - `useLayerTree()`
 - `useToolbar()`
 - `usePropertyList()`
-- `useScrubInput()`
+- `useNumberField()`
 - `locale`
 - `localeSetting`
 - `setLocale()`
@@ -182,7 +254,7 @@ These are mostly useful when extending SDK primitives rather than building from 
 <script setup lang="ts">
 import { provideEditor } from '@open-pencil/vue'
 
-import type { Editor } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
 
 const props = defineProps<{
   editor: Editor
@@ -199,7 +271,7 @@ provideEditor(props.editor)
 ### Read selection state
 
 ```ts
-import { useSelectionState } from '@open-pencil/vue'
+import { useSelectionState } from '@open-pencil/vue/editor/selection-state'
 
 const { hasSelection, selectedCount, selectedNode } = useSelectionState()
 ```
@@ -207,7 +279,7 @@ const { hasSelection, selectedCount, selectedNode } = useSelectionState()
 ### Build a menu
 
 ```ts
-import { useMenuModel } from '@open-pencil/vue'
+import { useMenuModel } from '@open-pencil/vue/editor/menu-model'
 
 const { appMenu, canvasMenu } = useMenuModel()
 ```

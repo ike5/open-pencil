@@ -1,7 +1,8 @@
-import type { CanvasKit, Path } from 'canvaskit-wasm'
+import type { CanvasKit, Path } from '@open-pencil/canvaskit'
+import type { VectorNetwork } from '@open-pencil/scene-graph'
+import type { Vector } from '@open-pencil/scene-graph/primitives'
 
-import type { VectorNetwork, VectorSegment, VectorVertex } from '#core/scene-graph'
-import type { Vector } from '#core/types'
+import { addOpenSegmentsToPath } from './path-helpers'
 
 export function fitCircleArc(
   pts: Vector[]
@@ -171,89 +172,28 @@ function buildCenterlineFromCrescent(
   const arcParams = fitCircleArc(midpoints)
   if (arcParams) {
     const { cx, cy, r, startAngleDeg, sweepDeg } = arcParams
-    const path = new ck.Path()
+    const path = new ck.PathBuilder()
     path.addArc(ck.LTRBRect(cx - r, cy - r, cx + r, cy + r), startAngleDeg, sweepDeg)
-    return path
+    return path.detachAndDelete()
   }
 
-  const path = new ck.Path()
+  const path = new ck.PathBuilder()
   path.moveTo(midpoints[0].x, midpoints[0].y)
   for (let i = 1; i < midpoints.length; i++) {
     path.lineTo(midpoints[i].x, midpoints[i].y)
   }
-  return path
+  return path.detachAndDelete()
 }
 
-function addSegmentDirected(
-  path: Path,
-  seg: VectorSegment,
-  vertices: VectorVertex[],
-  forward: boolean
-): void {
-  const p0 = forward ? vertices[seg.start] : vertices[seg.end]
-  const p3 = forward ? vertices[seg.end] : vertices[seg.start]
-  const ts = seg.tangentStart
-  const te = seg.tangentEnd
-  const isLine = ts.x === 0 && ts.y === 0 && te.x === 0 && te.y === 0
-  if (isLine) {
-    path.lineTo(p3.x, p3.y)
-  } else if (forward) {
-    path.cubicTo(p0.x + ts.x, p0.y + ts.y, p3.x + te.x, p3.y + te.y, p3.x, p3.y)
-  } else {
-    path.cubicTo(p0.x + te.x, p0.y + te.y, p3.x + ts.x, p3.y + ts.y, p3.x, p3.y)
-  }
-}
-
-function findChainStart(chain: number[], segments: VectorSegment[]): number {
-  if (chain.length < 2) return segments[chain[0]].start
-  const first = segments[chain[0]]
-  const second = segments[chain[1]]
-  if (first.start === second.start || first.start === second.end) return first.end
-  return first.start
-}
-
-function buildChains(segments: VectorSegment[]): number[][] {
-  if (segments.length === 0) return []
-  const adj = new Map<number, number[]>()
-  for (let i = 0; i < segments.length; i++) {
-    const s = segments[i]
-    let startList = adj.get(s.start)
-    if (!startList) {
-      startList = []
-      adj.set(s.start, startList)
-    }
-    startList.push(i)
-    let endList = adj.get(s.end)
-    if (!endList) {
-      endList = []
-      adj.set(s.end, endList)
-    }
-    endList.push(i)
-  }
-  const visited = new Set<number>()
-  const chains: number[][] = []
-  const degree1 = [...adj.entries()].filter(([, segs]) => segs.length === 1).map(([v]) => v)
-  const startVertices = degree1.length > 0 ? degree1 : [segments[0].start]
-  for (const startVertex of startVertices) {
-    let current = startVertex
-    const chain: number[] = []
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    while (true) {
-      const segs = adj.get(current)
-      if (!segs) break
-      const nextSeg = segs.find((s) => !visited.has(s))
-      if (nextSeg === undefined) break
-      visited.add(nextSeg)
-      chain.push(nextSeg)
-      const seg = segments[nextSeg]
-      current = seg.start === current ? seg.end : seg.start
-    }
-    if (chain.length > 0) chains.push(chain)
-  }
-  return chains
-}
-
-export function vectorNetworkToCenterlinePath(ck: CanvasKit, network: VectorNetwork): Path {
+/**
+ * The path a dashed stroke runs along: a thin crescent's centre line, or the open segments with
+ * their corners rounded by `cornerRadius`, as the solid stroke draws them.
+ */
+export function vectorNetworkToCenterlinePath(
+  ck: CanvasKit,
+  network: VectorNetwork,
+  cornerRadius = 0
+): Path {
   const { vertices, segments } = network
 
   const crescent = isClosedThinCrescent(network)
@@ -262,29 +202,7 @@ export function vectorNetworkToCenterlinePath(ck: CanvasKit, network: VectorNetw
     if (result) return result
   }
 
-  const path = new ck.Path()
-  const visited = new Set<number>()
-  const chains = buildChains(segments)
-
-  for (const chain of chains) {
-    if (chain.length === 0) continue
-    let current = findChainStart(chain, segments)
-    path.moveTo(vertices[current].x, vertices[current].y)
-    for (const segIdx of chain) {
-      visited.add(segIdx)
-      const seg = segments[segIdx]
-      const forward = seg.start === current
-      addSegmentDirected(path, seg, vertices, forward)
-      current = forward ? seg.end : seg.start
-    }
-  }
-
-  for (let i = 0; i < segments.length; i++) {
-    if (visited.has(i)) continue
-    const seg = segments[i]
-    path.moveTo(vertices[seg.start].x, vertices[seg.start].y)
-    addSegmentDirected(path, seg, vertices, true)
-  }
-
-  return path
+  const path = new ck.PathBuilder()
+  addOpenSegmentsToPath(path, segments, vertices, cornerRadius)
+  return path.detachAndDelete()
 }

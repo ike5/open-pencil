@@ -7,7 +7,8 @@ import Yoga, {
   type Node as YogaNode
 } from 'yoga-layout'
 
-import type { GridTrack, SceneNode } from '#core/scene-graph'
+import type { GridTrack, SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import { enforcedAspectRatio, layoutSizingInParent } from '@open-pencil/scene-graph/layout'
 
 const yogaConfig = Yoga.Config.create()
 yogaConfig.setPointScaleFactor(0)
@@ -16,12 +17,109 @@ export function createYogaNode(): YogaNode {
   return Yoga.Node.create(yogaConfig)
 }
 
+/**
+ * The stroke a frame counts inside its padding, per side: its visible INSIDE strokes when its
+ * strokes are included in layout, as Figma lays it out and as a CSS border takes room.
+ */
+function includedStrokeWeights(
+  node: SceneNode
+): Record<'top' | 'right' | 'bottom' | 'left', number> {
+  const stroke = node.strokes.find((paint) => paint.visible)
+  if (!node.strokesIncludedInLayout || stroke?.align !== 'INSIDE') {
+    return { top: 0, right: 0, bottom: 0, left: 0 }
+  }
+  if (!node.independentStrokeWeights) {
+    return { top: stroke.weight, right: stroke.weight, bottom: stroke.weight, left: stroke.weight }
+  }
+  return {
+    top: node.borderTopWeight,
+    right: node.borderRightWeight,
+    bottom: node.borderBottomWeight,
+    left: node.borderLeftWeight
+  }
+}
+
+/** A layout container's padding, with the strokes it includes in layout added to each side. */
+export function setLayoutPadding(yogaNode: YogaNode, node: SceneNode): void {
+  const padding = layoutPadding(node)
+  yogaNode.setPadding(Edge.Top, padding.top)
+  yogaNode.setPadding(Edge.Right, padding.right)
+  yogaNode.setPadding(Edge.Bottom, padding.bottom)
+  yogaNode.setPadding(Edge.Left, padding.left)
+}
+
+/** A layout container's padding on each side, with the strokes it includes in layout added. */
+export function layoutPadding(
+  node: SceneNode
+): Record<'top' | 'right' | 'bottom' | 'left', number> {
+  const stroke = includedStrokeWeights(node)
+  return {
+    top: node.paddingTop + stroke.top,
+    right: node.paddingRight + stroke.right,
+    bottom: node.paddingBottom + stroke.bottom,
+    left: node.paddingLeft + stroke.left
+  }
+}
+
 export function configureAbsoluteChild(yogaChild: YogaNode, child: SceneNode): void {
   yogaChild.setPositionType(PositionType.Absolute)
   yogaChild.setPosition(Edge.Left, child.x)
   yogaChild.setPosition(Edge.Top, child.y)
   yogaChild.setWidth(child.width)
   yogaChild.setHeight(child.height)
+}
+
+export function configureNonTextLeaf(
+  yogaChild: YogaNode,
+  child: SceneNode,
+  isRow: boolean,
+  stretchCross: boolean
+): void {
+  const w = child.width
+  const h = child.height
+
+  if (child.layoutGrow > 0) {
+    yogaChild.setFlexGrow(child.layoutGrow)
+    if (!stretchCross) {
+      if (isRow) yogaChild.setHeight(h)
+      else yogaChild.setWidth(w)
+    }
+  } else {
+    if (isRow) {
+      yogaChild.setWidth(w)
+      if (!stretchCross) yogaChild.setHeight(h)
+    } else {
+      yogaChild.setHeight(h)
+      if (!stretchCross) yogaChild.setWidth(w)
+    }
+  }
+}
+
+/**
+ * A locked aspect ratio sizes the axis Fill does not drive, as Figma lays it out: Fill along the
+ * parent's primary axis drives when set, else Fill across it, and the other axis follows even past
+ * the parent's edge. An axis that hugs keeps its own size.
+ */
+export function applyLockedAspectRatio(
+  yogaNode: YogaNode,
+  node: SceneNode,
+  parent: SceneNode
+): void {
+  const ratio = enforcedAspectRatio(node)
+  if (ratio === null) return
+  const width = layoutSizingInParent(parent, node, 'HORIZONTAL')
+  const height = layoutSizingInParent(parent, node, 'VERTICAL')
+  const primaryIsWidth = parent.layoutMode !== 'VERTICAL'
+  const primary = primaryIsWidth ? width : height
+  const cross = primaryIsWidth ? height : width
+  let drivesWidth: boolean
+  if (primary === 'FILL') drivesWidth = primaryIsWidth
+  else if (cross === 'FILL') drivesWidth = !primaryIsWidth
+  else return
+  if ((drivesWidth ? height : width) === 'HUG') return
+  yogaNode.setAspectRatio(ratio)
+  if (drivesWidth) yogaNode.setHeight('auto')
+  else yogaNode.setWidth('auto')
 }
 
 export function applyMinMaxConstraints(yogaNode: YogaNode, node: SceneNode): void {
@@ -92,4 +190,19 @@ export function mapAlignSelf(alignSelf: string): Align | null {
     default:
       return null
   }
+}
+
+/** The axis a frame's auto layout parent stretches it along, if any. */
+export function parentStretchedAxis(
+  graph: SceneGraph,
+  frame: SceneNode
+): 'width' | 'height' | null {
+  const parent = frame.parentId ? graph.getNode(frame.parentId) : undefined
+  if (!parent || frame.layoutPositioning === 'ABSOLUTE') return null
+  if (parent.layoutMode !== 'HORIZONTAL' && parent.layoutMode !== 'VERTICAL') return null
+  const stretched =
+    frame.layoutAlignSelf === 'STRETCH' ||
+    (frame.layoutAlignSelf === 'AUTO' && parent.counterAxisAlign === 'STRETCH')
+  if (!stretched) return null
+  return parent.layoutMode === 'VERTICAL' ? 'width' : 'height'
 }

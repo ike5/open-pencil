@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { useElementSize, useWindowSize } from '@vueuse/core'
-import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import { motion } from 'motion-v'
 import type { PanInfo } from 'motion-v'
-import { computed, ref } from 'vue'
+import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
+import { computed, ref, watch } from 'vue'
 
-import ChatPanel from './ChatPanel.vue'
-import CodePanel from './CodePanel.vue'
-import DesignPanel from './DesignPanel.vue'
-import LayerTree from './LayerTree.vue'
-import PagesPanel from './PagesPanel.vue'
+import { useI18n } from '@open-pencil/vue/i18n'
+
+import { useEditorStore } from '@/app/editor/active-store'
+import { useMotionTransition } from '@/app/shell/motion/transitions'
+import ChatPanel from '@/components/chat/ChatPanel.vue'
 import {
   DRAWER_SPRING_DAMPING,
   DRAWER_SPRING_STIFFNESS,
@@ -18,12 +18,18 @@ import {
   SWIPE_THRESHOLD,
   SWIPE_VELOCITY_THRESHOLD
 } from '@/constants'
-import { useEditorStore } from '@/app/editor/active-store'
+
+import CodePanel from './CodePanel.vue'
+import CommentsPanel from './comments/CommentsPanel.vue'
+import DesignPanel from './DesignPanel.vue'
+import LayerTree from './LayerTree/LayerTree.vue'
+import PagesPanel from './PagesPanel.vue'
 
 type Snap = 'closed' | 'half' | 'full'
 type DrawerTab = 'layers' | 'design' | 'code' | 'ai'
 
 const store = useEditorStore()
+const { settings, panels } = useI18n()
 
 const headerRef = ref<HTMLElement | null>(null)
 
@@ -81,6 +87,10 @@ function snapHeight(s: Snap): number {
 
 const targetHeight = ref(snapHeight(snap.value))
 
+watch(headerH, () => {
+  if (snap.value === 'closed') targetHeight.value = snapHeight('closed')
+})
+
 function onPan(_e: PointerEvent, info: PanInfo) {
   const maxHeight = snapHeight('full')
   const raw = snapHeight(snap.value) - info.offset.y
@@ -102,11 +112,11 @@ function onPanEnd(_e: PointerEvent, info: PanInfo) {
   targetHeight.value = snapHeight(snap.value)
 }
 
-const drawerTransition = {
-  type: 'spring' as const,
+const drawerTransition = useMotionTransition({
+  type: 'spring',
   stiffness: DRAWER_SPRING_STIFFNESS,
   damping: DRAWER_SPRING_DAMPING
-}
+})
 </script>
 
 <template>
@@ -119,7 +129,11 @@ const drawerTransition = {
     @panEnd="onPanEnd"
   >
     <TabsRoot :model-value="getDrawerTab()" class="flex min-h-0 flex-1 flex-col">
-      <nav ref="headerRef" aria-label="Mobile panel navigation" class="flex shrink-0 flex-col">
+      <nav
+        ref="headerRef"
+        :aria-label="settings.mobilePanelNavigation"
+        class="flex shrink-0 flex-col"
+      >
         <div class="flex w-full justify-center pt-2">
           <div class="h-1 w-8 rounded-full bg-muted/40" />
         </div>
@@ -127,7 +141,7 @@ const drawerTransition = {
           <TabsTrigger
             data-test-id="mobile-ribbon-layers"
             value="layers"
-            class="flex h-full cursor-pointer items-center justify-center gap-1.5 px-4 text-xs transition-colors outline-none select-none data-[state=active]:text-accent"
+            class="flex h-full cursor-pointer items-center justify-center gap-1.5 px-4 text-xs transition-colors outline-none select-none data-[state=active]:text-primary"
             @click="toggleTab('layers')"
           >
             <icon-lucide-layers class="size-4" />
@@ -136,7 +150,7 @@ const drawerTransition = {
           <TabsTrigger
             data-test-id="mobile-ribbon-design"
             value="design"
-            class="flex h-full cursor-pointer items-center justify-center gap-1.5 px-4 text-xs transition-colors outline-none select-none data-[state=active]:text-accent"
+            class="flex h-full cursor-pointer items-center justify-center gap-1.5 px-4 text-xs transition-colors outline-none select-none data-[state=active]:text-primary"
             @click="toggleTab('design')"
           >
             <icon-lucide-sliders-horizontal class="size-4" />
@@ -147,7 +161,7 @@ const drawerTransition = {
           <TabsTrigger
             data-test-id="mobile-ribbon-code"
             value="code"
-            class="flex h-full cursor-pointer items-center justify-center px-3 transition-colors outline-none select-none data-[state=active]:text-accent"
+            class="flex h-full cursor-pointer items-center justify-center px-3 transition-colors outline-none select-none data-[state=active]:text-primary"
             @click="toggleTab('code')"
           >
             <icon-lucide-code class="size-4" />
@@ -156,7 +170,7 @@ const drawerTransition = {
           <TabsTrigger
             data-test-id="mobile-ribbon-ai"
             value="ai"
-            class="flex h-full cursor-pointer items-center justify-center px-3 transition-colors outline-none select-none data-[state=active]:text-accent"
+            class="flex h-full cursor-pointer items-center justify-center px-3 transition-colors outline-none select-none data-[state=active]:text-primary"
             @click="toggleTab('ai')"
           >
             <icon-lucide-sparkles class="size-4" />
@@ -169,8 +183,8 @@ const drawerTransition = {
           <div data-test-id="mobile-drawer-layers" class="flex h-full flex-col">
             <PagesPanel />
             <div class="border-t border-border" />
-            <header class="shrink-0 px-3 py-2 text-[11px] tracking-wider text-muted uppercase">
-              Layers
+            <header class="shrink-0 px-3 py-2 text-2xs font-semibold text-muted">
+              {{ panels.layers }}
             </header>
             <LayerTree class="min-h-0 flex-1" />
           </div>
@@ -178,13 +192,15 @@ const drawerTransition = {
 
         <TabsContent value="design" class="mt-0 h-full data-[state=inactive]:hidden">
           <div data-test-id="mobile-drawer-design" class="flex h-full flex-col">
-            <DesignPanel />
+            <!-- The Comment tool turns the properties into the comments list, as on desktop. -->
+            <CommentsPanel v-if="store.state.activeTool === 'COMMENT'" />
+            <DesignPanel v-else />
           </div>
         </TabsContent>
 
         <TabsContent value="code" class="mt-0 h-full data-[state=inactive]:hidden">
           <div data-test-id="mobile-drawer-code" class="flex h-full flex-col">
-            <CodePanel />
+            <CodePanel :active="isOpen && getDrawerTab() === 'code'" />
           </div>
         </TabsContent>
 

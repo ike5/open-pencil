@@ -1,91 +1,51 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import 'vue-stream-markdown/index.css' layer(components);
+@import './theme/markdown/markdown.css';
 
-@utility scrollbar-none {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  &::-webkit-scrollbar {
-    display: none;
+@import './theme/tokens.css';
+
+/*
+ * Every scroll container in the app takes the thin scrollbar; `scrollbar-none` still hides one,
+ * since utilities come after the base layer.
+ */
+@layer base {
+  * {
+    @apply scrollbar-thin;
   }
 }
 
-@utility scrollbar-thin {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-border) transparent;
-  &::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+/*
+ * An icon that points along the line of text (back and next, a submenu, a disclosure, a sidebar)
+ * says so with data-direction="reading" and turns around in a right-to-left interface, matched as
+ * Tailwind matches `rtl:`. One that names a canvas side says data-direction="physical" and keeps
+ * its direction (`@open-pencil/vue/icon-direction`).
+ */
+@layer base {
+  [data-direction='reading']:where(:dir(rtl), [dir='rtl'], [dir='rtl'] *) {
+    scale: -1 1;
   }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-border);
-    border-radius: 3px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background: var(--color-muted);
+
+  /* Code, keys, and output read left to right inside right-to-left text: 0.17.0-beta.2, ⌘N. */
+  :where(code, kbd, samp, pre) {
+    direction: ltr;
+    unicode-bidi: isolate;
   }
 }
 
-@theme {
-  --color-panel: #2a2a2a;
-  --color-canvas: #1e1e1e;
-  --color-border: #3a3a3a;
-  --color-hover: #353535;
-  --color-accent: #3b82f6;
-  --color-surface: #e0e0e0;
-  --color-muted: #888888;
-  --color-input: #1e1e1e;
-  --color-component: #9747ff;
-  --color-warning-bg: rgb(245 158 11 / 0.1);
-  --color-warning-border: rgb(245 158 11 / 0.3);
-  --color-warning-text: #fde68a;
-  --color-warning-action: #fcd34d;
-  --color-success: #4ade80;
-  --color-success-bg: #16a34a;
-  --color-success-bg-hover: #15803d;
-  --color-code-tag: #7dd3fc;
-  --color-code-attribute: #c4b5fd;
-  --color-code-string: #86efac;
-  --color-code-number: #fca5a5;
-  --color-code-punctuation: #888888;
-  --color-checkerboard: #3a3a3a;
-  --color-checkerboard-muted: #4a4a4a;
-  --color-ruler-bg: rgb(36, 36, 36);
-  --color-ruler-tick: rgb(102, 102, 102);
-  --color-ruler-text: rgb(140, 140, 140);
-  --color-ruler-label: rgb(255, 255, 255);
+/*
+ * The interface size is the root font size: every interface size is in rem, so this one value
+ * scales panels, text, and controls, while the canvas keeps drawing in screen pixels. A share of
+ * 100% keeps the browser's own default font size as the starting point.
+ */
+html[data-interface-scale='110'] {
+  font-size: 110%;
 }
-
-html[data-theme='light'] {
-  --color-panel: #ffffff;
-  --color-canvas: #f3f4f6;
-  --color-border: #d8dce3;
-  --color-hover: #eef1f5;
-  --color-accent: #2563eb;
-  --color-surface: #202124;
-  --color-muted: #6b7280;
-  --color-input: #ffffff;
-  --color-component: #7c3aed;
-  --color-warning-bg: rgb(245 158 11 / 0.14);
-  --color-warning-border: rgb(245 158 11 / 0.32);
-  --color-warning-text: #92400e;
-  --color-warning-action: #78350f;
-  --color-success: #15803d;
-  --color-success-bg: #16a34a;
-  --color-success-bg-hover: #15803d;
-  --color-code-tag: #0369a1;
-  --color-code-attribute: #6d28d9;
-  --color-code-string: #15803d;
-  --color-code-number: #b91c1c;
-  --color-code-punctuation: #64748b;
-  --color-checkerboard: #d1d5db;
-  --color-checkerboard-muted: #e5e7eb;
-  --color-ruler-bg: rgb(229, 231, 235);
-  --color-ruler-tick: rgb(148, 163, 184);
-  --color-ruler-text: rgb(100, 116, 139);
-  --color-ruler-label: rgb(255, 255, 255);
+html[data-interface-scale='125'] {
+  font-size: 125%;
+}
+html[data-interface-scale='150'] {
+  font-size: 150%;
 }
 
 html,
@@ -97,12 +57,8 @@ body,
 }
 
 body {
-  font-family:
-    Inter,
-    system-ui,
-    -apple-system,
-    sans-serif;
-  font-size: 13px;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  font-size: 0.8125rem;
   color: var(--color-surface);
   background: var(--color-canvas);
   user-select: none;

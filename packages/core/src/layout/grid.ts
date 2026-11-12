@@ -1,9 +1,15 @@
-import { Direction, Display, Gutter, Edge, type Node as YogaNode } from 'yoga-layout'
+import { Direction, Display, Gutter, type Node as YogaNode } from 'yoga-layout'
 
-import type { SceneGraph, SceneNode } from '#core/scene-graph'
-import { resolveNodeLayoutDirection } from '#core/text/direction'
+import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import { layoutSizing } from '@open-pencil/scene-graph/layout'
+import { resolveNodeLayoutDirection } from '@open-pencil/scene-graph/text/direction'
 
-import { configureAbsoluteChild, createYogaNode, mapGridTrack } from './yoga-helpers'
+import {
+  configureAbsoluteChild,
+  createYogaNode,
+  mapGridTrack,
+  setLayoutPadding
+} from './yoga-helpers'
 
 function configureAsGrid(
   yogaNode: YogaNode,
@@ -27,13 +33,10 @@ function configureAsGrid(
   yogaNode.setGap(Gutter.Column, node.gridColumnGap)
   yogaNode.setGap(Gutter.Row, node.gridRowGap)
 
-  yogaNode.setPadding(Edge.Top, node.paddingTop)
-  yogaNode.setPadding(Edge.Right, node.paddingRight)
-  yogaNode.setPadding(Edge.Bottom, node.paddingBottom)
-  yogaNode.setPadding(Edge.Left, node.paddingLeft)
+  setLayoutPadding(yogaNode, node)
 }
 
-export function createGridChildNode(child: SceneNode): YogaNode {
+export function createGridChildNode(graph: SceneGraph, child: SceneNode): YogaNode {
   const yogaChild = createYogaNode()
   if (!child.visible) {
     yogaChild.setDisplay(Display.None)
@@ -45,19 +48,11 @@ export function createGridChildNode(child: SceneNode): YogaNode {
       yogaChild.setGridRowStart(pos.row)
       yogaChild.setGridRowEndSpan(pos.rowSpan)
     }
-    const hasLayout = child.layoutMode !== 'NONE'
-    const explicitStretch = child.layoutGrow > 0 || child.layoutAlignSelf === 'STRETCH'
-
-    if (explicitStretch || hasLayout) {
-      yogaChild.setWidthStretch()
-    } else {
-      yogaChild.setWidth(child.width)
-    }
-    if (explicitStretch) {
-      yogaChild.setHeightStretch()
-    } else {
-      yogaChild.setHeight(child.height)
-    }
+    // Each axis fills its cell on its own, as in Figma: grow for width, stretch for height.
+    if (layoutSizing(graph, child, 'HORIZONTAL') === 'FILL') yogaChild.setWidthStretch()
+    else yogaChild.setWidth(child.width)
+    if (layoutSizing(graph, child, 'VERTICAL') === 'FILL') yogaChild.setHeightStretch()
+    else yogaChild.setHeight(child.height)
   }
   return yogaChild
 }
@@ -78,7 +73,7 @@ export function buildGridTree(
       configureAbsoluteChild(yogaChild, child)
       root.insertChild(yogaChild, root.getChildCount())
     } else {
-      const yogaChild = createGridChildNode(child)
+      const yogaChild = createGridChildNode(graph, child)
       if (
         child.layoutMode === 'GRID' ||
         child.layoutMode === 'HORIZONTAL' ||

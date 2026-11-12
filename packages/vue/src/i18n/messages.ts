@@ -1,309 +1,102 @@
-import { createI18n, params } from '@nanostores/i18n'
-import type { ComponentsJSON } from '@nanostores/i18n'
+import { aiMessageDefaults, aiMessages } from '#vue/i18n/messages/ai'
+import { automationMessageDefaults, automationMessages } from '#vue/i18n/messages/automation'
+import { cloudMessageDefaults, cloudMessages } from '#vue/i18n/messages/cloud/editor'
+import { cloudPortalMessageDefaults, cloudPortalMessages } from '#vue/i18n/messages/cloud/portal'
+import { codeMessageDefaults, codeMessages } from '#vue/i18n/messages/code'
+import {
+  collaborationMessageDefaults,
+  collaborationMessages
+} from '#vue/i18n/messages/collaboration'
+import { commandMessageDefaults, commandMessages } from '#vue/i18n/messages/commands'
+import { commentMessageDefaults, commentMessages } from '#vue/i18n/messages/comments'
+import { commonMessageDefaults, commonMessages } from '#vue/i18n/messages/common'
+import { credentialsMessageDefaults, credentialsMessages } from '#vue/i18n/messages/credentials'
+import { designCheckMessageDefaults, designCheckMessages } from '#vue/i18n/messages/design-check'
+import { diagnosticsMessageDefaults, diagnosticsMessages } from '#vue/i18n/messages/diagnostics'
+import { editorMessageDefaults, editorMessages } from '#vue/i18n/messages/editor'
+import { figJamMessageDefaults, figJamMessages } from '#vue/i18n/messages/figjam'
+import { filesMessageDefaults, filesMessages } from '#vue/i18n/messages/files'
+import { fontsMessageDefaults, fontsMessages } from '#vue/i18n/messages/fonts'
+import { mediaMessageDefaults, mediaMessages } from '#vue/i18n/messages/media'
+import { menuMessageDefaults, menuMessages } from '#vue/i18n/messages/menu'
+import { pageMessageDefaults, pageMessages } from '#vue/i18n/messages/pages'
+import { panelMessageDefaults, panelMessages } from '#vue/i18n/messages/panels'
+import { recoveryMessageDefaults, recoveryMessages } from '#vue/i18n/messages/recovery'
+import { renameMessageDefaults, renameMessages } from '#vue/i18n/messages/rename'
+import { settingsMessageDefaults, settingsMessages } from '#vue/i18n/messages/settings'
+import { shapeMessageDefaults, shapeMessages } from '#vue/i18n/messages/shapes'
+import { statusMessageDefaults, statusMessages } from '#vue/i18n/messages/statuses'
+import { storageMessageDefaults, storageMessages } from '#vue/i18n/messages/storage'
+import { toolMessageDefaults, toolMessages } from '#vue/i18n/messages/tools'
+import { updatesMessageDefaults, updatesMessages } from '#vue/i18n/messages/updates'
+import { variablesMessageDefaults, variablesMessages } from '#vue/i18n/messages/variables/panel'
+import {
+  variableTypeMessageDefaults,
+  variableTypeMessages
+} from '#vue/i18n/messages/variables/types'
 
-import { locale } from '#vue/i18n/locale'
-import type { Locale } from '#vue/i18n/locale'
-
-const localeLoaders: Record<Exclude<Locale, 'en'>, () => Promise<{ default: ComponentsJSON }>> = {
-  de: () => import('#vue/locales/de.json'),
-  es: () => import('#vue/locales/es.json'),
-  fr: () => import('#vue/locales/fr.json'),
-  it: () => import('#vue/locales/it.json'),
-  pl: () => import('#vue/locales/pl.json'),
-  ru: () => import('#vue/locales/ru.json'),
-  'zh-CN': () => import('#vue/locales/zh-CN.json')
+export {
+  aiMessages,
+  automationMessages,
+  codeMessages,
+  collaborationMessages,
+  commandMessages,
+  commentMessages,
+  commonMessages,
+  credentialsMessages,
+  designCheckMessages,
+  diagnosticsMessages,
+  editorMessages,
+  figJamMessages,
+  filesMessages,
+  fontsMessages,
+  mediaMessages,
+  menuMessages,
+  pageMessages,
+  panelMessages,
+  recoveryMessages,
+  renameMessages,
+  settingsMessages,
+  shapeMessages,
+  statusMessages,
+  storageMessages,
+  toolMessages,
+  updatesMessages,
+  cloudMessages,
+  cloudPortalMessages,
+  variablesMessages,
+  variableTypeMessages
 }
 
-const i18n = createI18n<Locale, 'en'>(locale, {
-  baseLocale: 'en',
-  async get(code) {
-    if (code === 'en') return {}
-    const mod = await localeLoaders[code]()
-    return mod.default
-  }
-})
-
-export const menuMessages = i18n('menu', {
-  file: 'File',
-  edit: 'Edit',
-  view: 'View',
-  object: 'Object',
-  arrange: 'Arrange',
-  text: 'Text',
-
-  new: 'New',
-  open: 'Open…',
-  save: 'Save',
-  saveAs: 'Save as…',
-  exportSelection: 'Export selection…',
-  autosave: 'Auto-save to local file',
-
-  copy: 'Copy',
-  paste: 'Paste',
-
-  zoomIn: 'Zoom in',
-  zoomOut: 'Zoom out',
-  profiler: 'Performance profiler',
-  language: 'Language',
-  checkUpdates: 'Check for updates…',
-
-  moveToPage: 'Move to page',
-  createInstance: 'Create instance',
-  hide: 'Hide',
-  show: 'Show',
-  lock: 'Lock',
-  unlock: 'Unlock',
-  cut: 'Cut',
-  front: 'Front',
-  back: 'Back',
-  toggleUI: 'Toggle UI',
-
-  bold: 'Bold',
-  italic: 'Italic',
-  underline: 'Underline',
-
-  pasteHere: 'Paste here',
-  copyPasteAs: 'Copy/Paste as',
-  copyAsText: 'Copy as text',
-  copyAsSVG: 'Copy as SVG',
-  copyAsPNG: 'Copy as PNG',
-  copyAsJSX: 'Copy as JSX',
-  copyNodeId: 'Copy node ID',
-  copyXPath: 'Copy XPath'
-})
-
-export const commandMessages = i18n('commands', {
-  undo: 'Undo',
-  redo: 'Redo',
-  selectAll: 'Select all',
-  duplicate: 'Duplicate',
-  delete: 'Delete',
-  group: 'Group',
-  ungroup: 'Ungroup',
-  createComponent: 'Create component',
-  createComponentSet: 'Create component set',
-  createInstance: 'Create instance',
-  detachInstance: 'Detach instance',
-  goToMainComponent: 'Go to main component',
-  addAutoLayout: 'Add auto layout',
-  bringToFront: 'Bring to front',
-  sendToBack: 'Send to back',
-  toggleVisibility: 'Toggle visibility',
-  toggleLock: 'Toggle lock',
-  moveToPage: 'Move to page',
-  zoomTo100: 'Zoom to 100%',
-  zoomToFit: 'Zoom to fit',
-  zoomToSelection: 'Zoom to selection'
-})
-
-export const toolMessages = i18n('tools', {
-  move: 'Move',
-  frame: 'Frame',
-  section: 'Section',
-  rectangle: 'Rectangle',
-  ellipse: 'Ellipse',
-  line: 'Line',
-  polygon: 'Polygon',
-  star: 'Star',
-  pen: 'Pen',
-  text: 'Text',
-  hand: 'Hand'
-})
-
-export const panelMessages = i18n('panels', {
-  layers: 'Layers',
-  pages: 'Pages',
-  design: 'Design',
-  code: 'Code',
-  ai: 'AI',
-  assets: 'Assets',
-
-  page: 'Page',
-  position: 'Position',
-  layout: 'Layout',
-  autoLayout: 'Auto layout',
-  alignment: 'Alignment',
-  appearance: 'Appearance',
-  fill: 'Fill',
-  stroke: 'Stroke',
-  effects: 'Effects',
-  export: 'Export',
-  typography: 'Typography',
-  variables: 'Variables',
-  variants: 'Variants',
-  constraints: 'Constraints',
-
-  addFill: 'Add fill',
-  addStroke: 'Add stroke',
-  addEffect: 'Add effect',
-  addExport: 'Add export',
-
-  dropShadow: 'Drop shadow',
-  innerShadow: 'Inner shadow',
-  layerBlur: 'Layer blur',
-  backgroundBlur: 'Background blur',
-
-  noSelection: 'No selection',
-  noLocalVariables: 'No local variables',
-  openVariables: 'Open variables',
-  addPage: 'Add page',
-  toggleVisibility: 'Toggle visibility',
-  independentCornerRadii: 'Independent corner radii',
-  detachVariable: 'Detach variable',
-  applyVariable: 'Apply variable',
-  noVariablesFound: 'No variables found',
-  addAutoLayout: 'Add auto layout (Shift+A)',
-  removeAutoLayout: 'Remove auto layout',
-  alignLeft: 'Align left',
-  alignCenterHorizontally: 'Align center horizontally',
-  alignRight: 'Align right',
-  alignTop: 'Align top',
-  alignCenterVertically: 'Align center vertically',
-  alignBottom: 'Align bottom',
-  flipHorizontal: 'Flip horizontal',
-  flipVertical: 'Flip vertical',
-  rotate90: 'Rotate 90°',
-  mixedFillsHelp: 'Click + to replace mixed fills',
-  mixedStrokesHelp: 'Click + to replace mixed strokes',
-  mixedEffectsHelp: 'Click + to replace mixed effects',
-  strokeSides: 'Stroke sides',
-  strokeDash: 'Dashed stroke',
-  strokeAlignInside: 'Inside',
-  strokeAlignCenter: 'Center',
-  strokeAlignOutside: 'Outside',
-  exportPreview: 'Preview',
-  exportRenderingPreview: 'Rendering preview…',
-  create: 'Create',
-  add: 'Add',
-  createVariable: 'Create variable',
-  createColorVariable: params('Create color variable from {value}'),
-  createNumberVariable: params('Create number variable from {value}'),
-  variableName: 'Variable name',
-  mixed: 'Mixed',
-  layersCount: params('{count} layers'),
-  goToMainComponent: 'Go to Main Component',
-  detachInstance: 'Detach Instance',
-
-  solid: 'Solid',
-  linearGradient: 'Linear',
-  radialGradient: 'Radial',
-  image: 'Image',
-  stops: 'Stops',
-  addStop: 'Add stop',
-
-  alignCenter: 'Align center',
-  alignMiddle: 'Align middle',
-  clipContent: 'Clip content',
-  colorFormatRgb: 'RGB',
-  colorFormatHsl: 'HSL',
-  colorFormatHsb: 'HSB',
-  colorFormatOkhcl: 'OkHCL',
-  colorHintHsl: 'H hue · S saturation · L lightness',
-  colorHintHsb: 'H hue · S saturation · B brightness',
-  colorHintOkhcl: 'H hue · C chroma · L lightness · A alpha',
-  colorPreviewClipped: params('Clipped to {space} preview gamut'),
-  rulers: 'Rulers',
-  multiplayerCursors: 'Multiplayer cursors',
-  direction: 'Direction',
-  flow: 'Flow',
-  gapAuto: 'Auto gap',
-  horizontalGap: 'Horizontal gap',
-  verticalGap: 'Vertical gap',
-  auto: 'Auto',
-  columns: 'Columns',
-  rows: 'Rows',
-  sizingFixed: 'Fixed',
-  sizingHug: 'Hug',
-  sizingFill: 'Fill',
-  sizingHugShort: 'Hug',
-  sizingFillShort: 'Fill',
-  addMinWidth: 'Add min width',
-  removeMinWidth: 'Remove min width',
-  addMaxWidth: 'Add max width',
-  removeMaxWidth: 'Remove max width',
-  addMinHeight: 'Add min height',
-  removeMinHeight: 'Remove min height',
-  addMaxHeight: 'Add max height',
-  removeMaxHeight: 'Remove max height',
-  minWidthShort: 'Min W',
-  maxWidthShort: 'Max W',
-  minHeightShort: 'Min H',
-  maxHeightShort: 'Max H',
-  setToCurrentWidth: 'Set to current width',
-  setToCurrentHeight: 'Set to current height',
-  sizingFillFr: 'Fill (fr)',
-  sizingFixedPx: 'Fixed (px)'
-})
-
-export const variableTypeMessages = i18n('variableTypes', {
-  color: 'Color',
-  colorHint: 'Paint values',
-  number: 'Number',
-  numberHint: 'Sizes, spacing, opacity',
-  text: 'Text',
-  textHint: 'Copy and labels',
-  boolean: 'Boolean',
-  booleanHint: 'True or false'
-})
-
-export const pageMessages = i18n('pages', {
-  newPage: 'New page',
-  rename: 'Rename',
-  delete: 'Delete',
-  pageName: params('Page {number}')
-})
-
-export const dialogMessages = i18n('dialogs', {
-  cancel: 'Cancel',
-  apply: 'Apply',
-  close: 'Close',
-  ok: 'OK',
-  copy: 'Copy',
-  copied: 'Copied',
-  createCollection: 'Create collection',
-  renameCollection: 'Rename collection',
-  deleteCollection: 'Delete collection',
-  localVariables: 'Local variables',
-  noVariableCollections: 'No variable collections',
-  modes: 'Modes',
-  addMode: 'Add mode',
-  renameMode: 'Rename mode',
-  duplicateMode: 'Duplicate mode',
-  deleteMode: 'Delete mode',
-  setDefaultMode: 'Set as default',
-  selectLayerForJSX: 'Select a layer to see its JSX code',
-  connectAIProvider: 'Connect an AI provider to start chatting.',
-  connect: 'Connect',
-  getAPIKey: params('Get an {provider} API key →'),
-  oneKeyManyModels: 'One key for 100+ models from all providers.',
-  describeChange: 'Describe a change…',
-  describeCreateOrChange: 'Describe what you want to create or change.',
-  stopGenerating: 'Stop generating',
-  sendMessage: 'Send message',
-  baseURLPlaceholder: 'Base URL (e.g. http://localhost:11434/v1)',
-  modelIDPlaceholder: 'Model ID (e.g. llama-3.3-70b)',
-  yourName: 'Your name',
-  enterYourName: 'Enter your name',
-  shareThisFile: 'Share this file',
-  joinRoom: 'Join room',
-  join: 'Join',
-  roomLink: 'Room link',
-  joinCollaboration: 'Join collaboration',
-  orJoinRoom: 'or join a room',
-  pasteRoomLinkOrId: 'Paste room link or ID',
-  connected: 'Connected',
-  search: 'Search…',
-  noResults: 'No results',
-  share: 'Share',
-  appUpToDate: 'OpenPencil is up to date',
-  updateAvailableTitle: 'Update OpenPencil',
-  updateAvailable: params('OpenPencil {version} is available.'),
-  updateInstallPrompt:
-    'Download and install it now? The app will restart after the update is installed.',
-  downloadingUpdate: params('Downloading OpenPencil {version}'),
-  updateInstalledTitle: 'Update installed',
-  updateInstalled: params('OpenPencil {version} was installed{size}. Restarting now.'),
-  updateUnavailable:
-    'Updates are not available yet. Publish a signed release with latest.json first.',
-  updateCheckFailed: params('Could not check for updates: {error}')
-})
+export const messageDefaults = {
+  ai: aiMessageDefaults,
+  automation: automationMessageDefaults,
+  code: codeMessageDefaults,
+  collaboration: collaborationMessageDefaults,
+  commands: commandMessageDefaults,
+  comments: commentMessageDefaults,
+  common: commonMessageDefaults,
+  credentials: credentialsMessageDefaults,
+  designCheck: designCheckMessageDefaults,
+  diagnostics: diagnosticsMessageDefaults,
+  editor: editorMessageDefaults,
+  figjam: figJamMessageDefaults,
+  files: filesMessageDefaults,
+  fonts: fontsMessageDefaults,
+  media: mediaMessageDefaults,
+  menu: menuMessageDefaults,
+  pages: pageMessageDefaults,
+  panels: panelMessageDefaults,
+  recovery: recoveryMessageDefaults,
+  rename: renameMessageDefaults,
+  settings: settingsMessageDefaults,
+  shapes: shapeMessageDefaults,
+  statuses: statusMessageDefaults,
+  storage: storageMessageDefaults,
+  tools: toolMessageDefaults,
+  updates: updatesMessageDefaults,
+  cloud: cloudMessageDefaults,
+  cloudPortal: cloudPortalMessageDefaults,
+  variables: variablesMessageDefaults,
+  variableTypes: variableTypeMessageDefaults
+} as const

@@ -1,127 +1,160 @@
-import type { Canvas, Font } from 'canvaskit-wasm'
+import type { Canvas } from '@open-pencil/canvaskit'
+import type { SceneNode, SceneGraph } from '@open-pencil/scene-graph'
+import type { Mat3 } from '@open-pencil/scene-graph/matrix'
+import type { Rect } from '@open-pencil/scene-graph/primitives'
+import { shownStatusState } from '@open-pencil/scene-graph/statuses'
 
-import type { SkiaRenderer } from '#core/canvas/renderer'
+import type { RenderOverlays, SkiaRenderer } from '#core/canvas/renderer'
+import { SECTION_TITLE_RADIUS } from '#core/constants'
+
+import { labelLayout, labelViewport, type LabelLayout } from './layout'
 import {
-  SECTION_TITLE_HEIGHT,
-  SECTION_TITLE_PADDING_X,
-  SECTION_TITLE_RADIUS,
-  SECTION_TITLE_GAP,
-  COMPONENT_LABEL_FONT_SIZE,
-  COMPONENT_LABEL_GAP,
-  COMPONENT_LABEL_ICON_SIZE,
-  COMPONENT_LABEL_ICON_GAP
-} from '#core/constants'
-import type { SceneNode, SceneGraph } from '#core/scene-graph'
+  drawSectionStatus,
+  drawStatusDot,
+  placeStatusLabel,
+  SECTION_STATUS_ROOM,
+  statusDotCenter,
+  statusDotHitRect,
+  TITLE_STATUS_ROOM
+} from './status'
+import { frameTitleColor, sectionLabelColors } from './style'
+import { frameLabelPlacement, labelScreenMatrix, labelTransform } from './transform'
 
-export function drawSectionTitles(r: SkiaRenderer, canvas: Canvas, graph: SceneGraph): void {
-  if (!r.sectionTitleFont) return
+export function drawSectionTitles(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  overlays?: RenderOverlays
+): void {
+  const provider = r.fontProvider
+  if (!r.chromeFonts.sectionTitle || !provider) return
 
-  const sections = r.labelCache.getSections(graph, r.worldViewport)
+  const sections = r.labelCache.getSections(
+    graph,
+    labelViewport(r.worldViewport, r.zoom),
+    overlays?.rotationPreview
+  )
   if (sections.length === 0) return
 
-  const font = r.sectionTitleFont
-  const ellipsis = '…'
-  const ellipsisGlyphs = font.getGlyphIDs(ellipsis)
-  const ellipsisWidth = font.getGlyphWidths(ellipsisGlyphs)[0]
-
-  for (const { node, absX, absY, nested } of sections) {
-    drawSectionTitle(r, canvas, font, node, graph, absX, absY, nested, ellipsis, ellipsisWidth)
+  for (const { node, nested } of sections) {
+    if (node.id === overlays?.renamingLabelId) continue
+    drawSectionTitle(r, canvas, provider, node, graph, nested, overlays)
   }
 }
 
 function drawSectionTitle(
   r: SkiaRenderer,
   canvas: Canvas,
-  font: Font,
+  provider: NonNullable<SkiaRenderer['fontProvider']>,
   node: SceneNode,
   graph: SceneGraph,
-  absX: number,
-  absY: number,
   nested: boolean,
-  ellipsis: string,
-  ellipsisWidth: number
+  overlays?: RenderOverlays
 ): void {
-  const screenX = absX * r.zoom + r.panX
-  const screenY = absY * r.zoom + r.panY
-  const screenW = node.width * r.zoom
-  const maxPillW = Math.max(screenW, 0)
-
-  const glyphIds = font.getGlyphIDs(node.name)
-  const widths = font.getGlyphWidths(glyphIds)
-
-  let fullTextWidth = 0
-  for (const w of widths) fullTextWidth += w
-
-  const maxTextW = maxPillW - SECTION_TITLE_PADDING_X * 2
-  let displayText = node.name
-  let textWidth = fullTextWidth
-
-  if (textWidth > maxTextW && maxTextW > ellipsisWidth) {
-    let truncW = 0
-    let truncIdx = 0
-    for (let i = 0; i < widths.length; i++) {
-      if (truncW + widths[i] + ellipsisWidth > maxTextW) break
-      truncW += widths[i]
-      truncIdx = i + 1
-    }
-    displayText = node.name.slice(0, truncIdx) + ellipsis
-    textWidth = truncW + ellipsisWidth
-  } else if (maxTextW <= ellipsisWidth) {
-    displayText = ellipsis
-    textWidth = ellipsisWidth
-  }
-
-  const pillW = Math.min(textWidth + SECTION_TITLE_PADDING_X * 2, maxPillW)
-  const pillH = SECTION_TITLE_HEIGHT
-  const localPillX = 0
-  const localPillY = nested ? SECTION_TITLE_GAP : -pillH - SECTION_TITLE_GAP
-
-  const pillColor =
-    node.fills.length > 0 && node.fills[0].visible
-      ? r.resolveFillColor(node.fills[0], 0, node, graph)
-      : { r: 0.37, g: 0.37, b: 0.37, a: 1 }
-
-  canvas.save()
-  canvas.translate(screenX, screenY)
-  if (node.rotation !== 0) {
-    canvas.rotate(node.rotation, 0, 0)
-  }
-
-  r.auxFill.setColor(r.ck.Color4f(pillColor.r, pillColor.g, pillColor.b, pillColor.a))
-  const pillRect = r.ck.LTRBRect(localPillX, localPillY, localPillX + pillW, localPillY + pillH)
-  canvas.drawRRect(r.ck.RRectXY(pillRect, SECTION_TITLE_RADIUS, SECTION_TITLE_RADIUS), r.auxFill)
-
-  const lum = 0.299 * pillColor.r + 0.587 * pillColor.g + 0.114 * pillColor.b
-  r.auxFill.setColor(lum > 0.5 ? r.ck.BLACK : r.ck.WHITE)
-  const textY = localPillY + pillH * 0.7
-  canvas.drawText(displayText, localPillX + SECTION_TITLE_PADDING_X, textY, r.auxFill, font)
-  canvas.restore()
+  const status = shownStatusState(graph, node)
+  // A title leaves room for its status, so zooming out cuts the title short, not the status.
+  const titleWidth = node.width * r.zoom - (status ? SECTION_STATUS_ROOM : 0)
+  const initialLayout = labelLayout('section', titleWidth, nested)
+  if (!initialLayout) return
+  const { background, foreground, border, hover } = sectionLabelColors(r, graph, node)
+  r.labelParagraphCache.use(
+    r.ck,
+    provider,
+    node.name,
+    initialLayout.fontSize,
+    initialLayout.maxTextWidth,
+    foreground,
+    r.fontGeneration,
+    ({ paragraph, metrics }) => {
+      const layout = labelLayout('section', titleWidth, nested, metrics)
+      if (!layout) return
+      canvas.save()
+      try {
+        const matrix = labelScreenMatrix(labelTransform(node, graph, overlays?.rotationPreview), r)
+        canvas.concat(matrix)
+        r.auxFill.setColorComponents(background.r, background.g, background.b, background.a)
+        const { x, y, width, height } = layout.bounds
+        const bounds = r.ck.RRectXY(
+          r.ck.LTRBRect(x, y, x + width, y + height),
+          SECTION_TITLE_RADIUS,
+          SECTION_TITLE_RADIUS
+        )
+        canvas.drawRRect(bounds, r.auxFill)
+        if (overlays?.hoveredNodeId === node.id) {
+          r.auxFill.setColor(hover)
+          canvas.drawRRect(bounds, r.auxFill)
+        }
+        r.auxStroke.setColor(border)
+        r.auxStroke.setStrokeWidth(1)
+        r.auxStroke.setPathEffect(null)
+        canvas.drawRRect(bounds, r.auxStroke)
+        r.auxFill.setColor(foreground)
+        canvas.drawParagraph(paragraph, layout.text.x, layout.text.y)
+        if (status) {
+          const colors = { background, foreground, border }
+          const place = (rect: Rect) => placeStatusLabel(r, node.id, matrix, rect)
+          const width = node.width * r.zoom
+          drawSectionStatus(r, canvas, provider, status, layout.bounds, colors, width, place)
+        }
+      } finally {
+        canvas.restore()
+      }
+    },
+    initialLayout.fontWeight
+  )
 }
 
-export function drawComponentLabels(r: SkiaRenderer, canvas: Canvas, graph: SceneGraph): void {
-  if (!r.componentLabelFont) return
+/** A frame's or component's status, as a dot after its name. */
+function drawTitleStatus(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  node: SceneNode,
+  layout: LabelLayout,
+  textWidth: number,
+  screenWidth: number,
+  matrix: Mat3
+): void {
+  const status = shownStatusState(graph, node)
+  if (!status) return
+  const { text, fontSize } = layout
+  const center = statusDotCenter(text.x, text.y, textWidth, fontSize, screenWidth)
+  if (!center) return
+  drawStatusDot(r, canvas, status, center)
+  placeStatusLabel(r, node.id, matrix, statusDotHitRect(center))
+}
 
-  const components = r.labelCache.getComponents(graph, r.worldViewport)
+export function drawComponentLabels(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  overlays?: RenderOverlays
+): void {
+  if (!r.chromeFonts.componentLabel || !r.fontProvider) return
+
+  const components = r.labelCache.getComponents(
+    graph,
+    labelViewport(r.worldViewport, r.zoom),
+    overlays?.rotationPreview
+  )
   if (components.length === 0) return
 
-  const font = r.componentLabelFont
+  const provider = r.fontProvider
   const compColor = r.compColor()
-  const iconS = COMPONENT_LABEL_ICON_SIZE
 
-  for (const { node, absX, absY, inside } of components) {
-    const screenX = absX * r.zoom + r.panX
-    const screenY = absY * r.zoom + r.panY
+  for (const { node, inside } of components) {
+    const transform = labelTransform(node, graph, overlays?.rotationPreview)
+    const room = shownStatusState(graph, node) ? TITLE_STATUS_ROOM : 0
+    const layout = labelLayout('component', node.width * r.zoom - room, inside)
+    if (!layout?.icon) continue
+    const iconS = layout.icon.width
 
-    const labelX = screenX
-    let labelY: number
-    if (inside) {
-      labelY = screenY + COMPONENT_LABEL_GAP + COMPONENT_LABEL_FONT_SIZE
-    } else {
-      labelY = screenY - COMPONENT_LABEL_GAP
-    }
+    canvas.save()
+    const matrix = labelScreenMatrix(transform, r)
+    canvas.concat(matrix)
 
-    const iconX = labelX
-    const iconY = labelY - COMPONENT_LABEL_FONT_SIZE * 0.75
+    const iconX = layout.icon.x
+    const iconY = layout.icon.y
     const iconCx = iconX + iconS / 2
     const iconCy = iconY + iconS / 2
     const iconR = iconS / 2
@@ -131,7 +164,7 @@ export function drawComponentLabels(r: SkiaRenderer, canvas: Canvas, graph: Scen
     if (node.type === 'COMPONENT_SET') {
       const s = iconR * 0.45
       const gap = iconR * 0.2
-      const path = new r.ck.Path()
+      const path = new r.ck.PathBuilder()
       for (const [dx, dy] of [
         [-1, -1],
         [1, -1],
@@ -146,19 +179,86 @@ export function drawComponentLabels(r: SkiaRenderer, canvas: Canvas, graph: Scen
         path.lineTo(cx - s, cy)
         path.close()
       }
-      canvas.drawPath(path, r.auxFill)
-      path.delete()
+      const immutablePath = path.detachAndDelete()
+      canvas.drawPath(immutablePath, r.auxFill)
+      immutablePath.delete()
     } else {
-      const path = new r.ck.Path()
+      const path = new r.ck.PathBuilder()
       path.moveTo(iconCx, iconCy - iconR)
       path.lineTo(iconCx + iconR, iconCy)
       path.lineTo(iconCx, iconCy + iconR)
       path.lineTo(iconCx - iconR, iconCy)
       path.close()
-      canvas.drawPath(path, r.auxFill)
-      path.delete()
+      const immutablePath = path.detachAndDelete()
+      canvas.drawPath(immutablePath, r.auxFill)
+      immutablePath.delete()
     }
 
-    canvas.drawText(node.name, labelX + iconS + COMPONENT_LABEL_ICON_GAP, labelY, r.auxFill, font)
+    // The field renaming a component starts after its icon and stands in for its name.
+    if (node.id !== overlays?.renamingLabelId) {
+      const textWidth = r.labelParagraphCache.draw(
+        r.ck,
+        canvas,
+        provider,
+        node.name,
+        layout.fontSize,
+        layout.maxTextWidth,
+        compColor,
+        r.fontGeneration,
+        layout.text.x,
+        layout.text.y,
+        layout.fontWeight
+      )
+      drawTitleStatus(r, canvas, graph, node, layout, textWidth, node.width * r.zoom, matrix)
+    }
+    canvas.restore()
+  }
+}
+
+/**
+ * Names above the frames on the page and in sections, as Figma shows them: faded, or in the
+ * selection color while the frame is selected or hovered. A frame holding layers is a background
+ * that a click on its body does not select, so its name is how it is picked.
+ */
+export function drawFrameTitles(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  selectedIds: ReadonlySet<string>,
+  overlays?: RenderOverlays
+): void {
+  const provider = r.fontProvider
+  if (!r.chromeFonts.label || !provider) return
+
+  const frames = r.labelCache.getFrames(
+    graph,
+    labelViewport(r.worldViewport, r.zoom),
+    overlays?.rotationPreview
+  )
+  for (const { node } of frames) {
+    if (node.id === overlays?.renamingLabelId) continue
+    const transform = frameLabelPlacement(node, graph, overlays?.rotationPreview)
+    const room = shownStatusState(graph, node) ? TITLE_STATUS_ROOM : 0
+    const layout = labelLayout('frame', transform.width * r.zoom - room)
+    if (!layout) continue
+    const highlighted = selectedIds.has(node.id) || overlays?.hoveredNodeId === node.id
+    canvas.save()
+    const matrix = labelScreenMatrix(transform, r)
+    canvas.concat(matrix)
+    const textWidth = r.labelParagraphCache.draw(
+      r.ck,
+      canvas,
+      provider,
+      node.name,
+      layout.fontSize,
+      layout.maxTextWidth,
+      frameTitleColor(r, graph, node, layout, highlighted, overlays?.rotationPreview),
+      r.fontGeneration,
+      layout.text.x,
+      layout.text.y,
+      layout.fontWeight
+    )
+    drawTitleStatus(r, canvas, graph, node, layout, textWidth, transform.width * r.zoom, matrix)
+    canvas.restore()
   }
 }

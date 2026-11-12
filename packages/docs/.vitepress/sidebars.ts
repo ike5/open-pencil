@@ -1,31 +1,40 @@
-import type { ProgrammableLabels, SidebarLabels } from './labels'
 import type { DefaultTheme } from 'vitepress'
+
+import type { ProgrammableLabels, SidebarLabels } from './labels.ts'
 
 export const guideSidebar = (prefix: string, labels: SidebarLabels): DefaultTheme.SidebarItem[] => [
   {
-    text: labels.guide,
+    text: labels.overview,
     items: [
-      { text: labels.gettingStarted, link: `${prefix}/guide/getting-started` },
-      { text: labels.features, link: `${prefix}/guide/features` },
-      { text: labels.architecture, link: `${prefix}/guide/architecture` },
-      { text: labels.techStack, link: `${prefix}/guide/tech-stack` },
-      { text: labels.comparison, link: `${prefix}/guide/comparison` },
-      { text: labels.figmaMatrix, link: `${prefix}/guide/figma-comparison` },
-    ],
+      { text: labels.gettingStarted, link: `${prefix}/getting-started` },
+      { text: labels.features, link: `${prefix}/overview/features` },
+      { text: labels.comparison, link: `${prefix}/overview/comparison` },
+      // English only until translated; locales link to the canonical page.
+      { text: labels.privacy, link: '/overview/privacy' }
+    ]
   },
+  {
+    // The hosted service's own documents, in English: a Cloud server someone else runs has its own.
+    text: labels.cloudLegal,
+    items: [
+      { text: labels.cloudTerms, link: '/overview/legal/terms' },
+      { text: labels.cloudPrivacy, link: '/overview/legal/privacy' },
+      { text: labels.subprocessors, link: '/overview/legal/subprocessors' }
+    ]
+  }
 ]
 
 export const userGuideSidebar = (
   prefix: string,
-  labels: SidebarLabels,
+  labels: SidebarLabels
 ): DefaultTheme.SidebarItem[] => [
   {
     text: labels.gettingAround,
     items: [
       { text: labels.canvasNav, link: `${prefix}/user-guide/canvas-navigation` },
       { text: labels.selection, link: `${prefix}/user-guide/selection-and-manipulation` },
-      { text: labels.contextMenu, link: `${prefix}/user-guide/context-menu` },
-    ],
+      { text: labels.contextMenu, link: `${prefix}/user-guide/context-menu` }
+    ]
   },
   {
     text: labels.creatingContent,
@@ -33,14 +42,21 @@ export const userGuideSidebar = (
       { text: labels.shapes, link: `${prefix}/user-guide/drawing-shapes` },
       { text: labels.text, link: `${prefix}/user-guide/text-editing` },
       { text: labels.pen, link: `${prefix}/user-guide/pen-tool` },
-    ],
+      { text: labels.vectorEditing, link: `${prefix}/user-guide/vector-edit` },
+      // English only until translated; locales link to the canonical page.
+      { text: labels.icons, link: '/user-guide/icons' },
+      { text: labels.photos, link: '/user-guide/photos' }
+    ]
   },
   {
     text: labels.organizing,
     items: [
       { text: labels.layers, link: `${prefix}/user-guide/layers-and-pages` },
       { text: labels.exporting, link: `${prefix}/user-guide/exporting` },
-    ],
+      // English only until translated; locales link to the canonical page.
+      { text: labels.openPencilCloud, link: '/user-guide/openpencil-cloud' },
+      { text: labels.cloudStorage, link: '/user-guide/cloud-storage' }
+    ]
   },
   {
     text: labels.advanced,
@@ -48,52 +64,92 @@ export const userGuideSidebar = (
       { text: labels.autoLayout, link: `${prefix}/user-guide/auto-layout` },
       { text: labels.components, link: `${prefix}/user-guide/components` },
       { text: labels.variables, link: `${prefix}/user-guide/variables` },
-    ],
-  },
+      // English only until translated; locales link to the canonical page.
+      { text: labels.checkingDesigns, link: '/user-guide/checking-designs' }
+    ]
+  }
 ]
 
 export const programmableSidebar = (
   prefix: string,
-  labels: ProgrammableLabels,
+  labels: ProgrammableLabels
 ): DefaultTheme.SidebarItem[] => [
   {
     text: labels.overview,
     items: [
       { text: labels.overview, link: `${prefix}/programmable/` },
-      { text: labels.cli, link: `${prefix}/programmable/cli` },
-      { text: labels.inspecting, link: `${prefix}/programmable/inspecting` },
-      { text: labels.exporting, link: `${prefix}/programmable/exporting` },
-      { text: labels.analyzing, link: `${prefix}/programmable/analyzing` },
-      { text: labels.scripting, link: `${prefix}/programmable/scripting` },
+      { text: labels.cli, link: '/reference/cli' },
+      { text: labels.inspecting, link: `${prefix}/programmable/cli/inspecting` },
+      { text: labels.exporting, link: `${prefix}/programmable/cli/exporting` },
+      { text: labels.analyzing, link: `${prefix}/programmable/cli/analyzing` },
+      { text: labels.comparing, link: '/programmable/cli/comparing' },
+      { text: labels.appControl, link: '/programmable/cli/app-control' },
+      { text: labels.scripting, link: `${prefix}/programmable/cli/scripting` },
       { text: labels.jsxRenderer, link: `${prefix}/programmable/jsx-renderer` },
-      { text: labels.mcpServer, link: `${prefix}/programmable/mcp-server` },
+      { text: 'Native JavaScript APIs', link: '/programmable/native-api' },
+      { text: 'Design authoring reference', link: '/reference/design-authoring' },
+      { text: labels.mcpServer, link: '/programmable/mcp-server' },
       { text: labels.aiChat, link: `${prefix}/programmable/ai-chat` },
-      { text: labels.collaboration, link: `${prefix}/programmable/collaboration` },
-    ],
-  },
+      ...(!prefix
+        ? [
+            { text: 'Coding agents', link: '/programmable/coding-agents' },
+            {
+              text: 'BYOK Compatibility',
+              link: '/programmable/byok-provider-compatibility'
+            }
+          ]
+        : []),
+      { text: labels.collaboration, link: `${prefix}/programmable/collaboration` }
+    ]
+  }
 ]
 
-export const referenceSidebar = (prefix: string, label: string): DefaultTheme.SidebarItem[] => [
+export const referenceSidebar = (
+  prefix: string,
+  label: string,
+  labels: SidebarLabels
+): DefaultTheme.SidebarItem[] => [
   {
     text: label,
     items: [
-      { text: 'Keyboard Shortcuts', link: `${prefix}/reference/keyboard-shortcuts` },
-      { text: 'CLI', link: `${prefix}/reference/cli` },
-      { text: 'Node Types', link: `${prefix}/reference/node-types` },
-      { text: 'Scene Graph', link: `${prefix}/reference/scene-graph` },
-      { text: 'File Format', link: `${prefix}/reference/file-format` },
-    ],
-  },
+      { text: 'Keyboard Shortcuts', link: '/reference/keyboard-shortcuts' },
+      { text: 'CLI', link: '/reference/cli' },
+      { text: 'Node Types', link: '/reference/node-types' },
+      { text: 'Scene Graph', link: '/reference/scene-graph' },
+      { text: labels.figmaMatrix, link: `${prefix}/reference/figma-compatibility` },
+      ...(!prefix ? [{ text: 'DOM/CSS Mapping', link: '/reference/dom-css-mapping' }] : []),
+      { text: 'File Format', link: '/reference/file-format' },
+      { text: 'Self-hosting Cloud', link: '/reference/self-hosting-cloud' }
+    ]
+  }
 ]
 
-export const developmentSidebar = (prefix: string, label: string): DefaultTheme.SidebarItem[] => [
+export const developmentSidebar = (
+  prefix: string,
+  label: string,
+  labels: SidebarLabels
+): DefaultTheme.SidebarItem[] => [
   {
     text: label,
     items: [
       { text: 'Contributing', link: `${prefix}/development/contributing` },
       { text: 'Testing', link: `${prefix}/development/testing` },
-      { text: 'OpenSpec', link: `${prefix}/development/openspec` },
-      { text: 'Roadmap', link: `${prefix}/development/roadmap` },
-    ],
-  },
+      { text: labels.architecture, link: `${prefix}/development/architecture` },
+      { text: '.fig Reader Architecture', link: '/development/fig-reader' },
+      { text: labels.techStack, link: `${prefix}/development/tech-stack` },
+      ...(!prefix
+        ? [
+            { text: 'Roadmap', link: '/development/roadmap' },
+            { text: 'AI Chat Replies', link: '/development/ai-chat' },
+            { text: 'Behaviours and Preview', link: '/development/behaviours-and-preview' },
+            { text: 'Cloud Architecture', link: '/development/cloud' },
+            { text: 'Demo Tour', link: '/development/demo-tour' },
+            { text: 'Navigation Performance', link: '/development/navigation-performance' },
+            { text: 'Renderer Lifecycle', link: '/development/renderer-lifecycle' },
+            { text: 'Renderer Profiler', link: '/development/renderer-profiler' },
+            { text: 'Vector Conversion', link: '/development/vector-conversion' }
+          ]
+        : [])
+    ]
+  }
 ]

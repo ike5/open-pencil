@@ -1,8 +1,13 @@
-import type { Canvas, Paint } from 'canvaskit-wasm'
+import type { Canvas, Paint } from '@open-pencil/canvaskit'
+import type { Vector } from '@open-pencil/scene-graph/primitives'
 
-import { PEN_HANDLE_RADIUS, PEN_VERTEX_RADIUS, PEN_CLOSE_RADIUS_BOOST } from '#core/constants'
-import type { SceneGraph } from '#core/scene-graph'
-import type { Vector } from '#core/types'
+import {
+  PEN_ANCHOR_RADIUS,
+  PEN_CLOSE_MIN_POINTS,
+  PEN_CLOSE_RADIUS_BOOST,
+  PEN_HANDLE_RADIUS,
+  PEN_VERTEX_RADIUS
+} from '#core/constants'
 
 import type { SkiaRenderer, RenderOverlays } from './renderer'
 
@@ -15,7 +20,7 @@ function buildSegmentsPath(
   toScreen: ToScreenFn
 ): InstanceType<typeof r.ck.Path> {
   const { vertices, segments } = penState
-  const path = new r.ck.Path()
+  const path = new r.ck.PathBuilder()
   for (const seg of segments) {
     const s = toScreen(vertices[seg.start].x, vertices[seg.start].y)
     const e = toScreen(vertices[seg.end].x, vertices[seg.end].y)
@@ -40,7 +45,7 @@ function buildSegmentsPath(
       path.cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, e.x, e.y)
     }
   }
-  return path
+  return path.detachAndDelete()
 }
 
 /** Build a Path for the preview line from last vertex to cursor */
@@ -52,24 +57,25 @@ function buildCursorPath(
   const { vertices, dragTangent, cursorX, cursorY } = penState
   if (vertices.length === 0) return null
 
-  if (penState.pendingClose && vertices.length > 2) {
-    const path = new r.ck.Path()
-    const last = toScreen(vertices[vertices.length - 1].x, vertices[vertices.length - 1].y)
+  if (penState.pendingClose && vertices.length >= PEN_CLOSE_MIN_POINTS) {
+    // Closing preview: last -> first, leaving the last point along its own handle and arriving
+    // along the mirror of the drag at the first point.
+    const lastVertex = vertices[vertices.length - 1]
+    const out = penState.closeTangent ?? { x: 0, y: 0 }
+    const into = dragTangent ? { x: -dragTangent.x, y: -dragTangent.y } : { x: 0, y: 0 }
+    const path = new r.ck.PathBuilder()
+    const last = toScreen(lastVertex.x, lastVertex.y)
+    const cp1 = toScreen(lastVertex.x + out.x, lastVertex.y + out.y)
+    const cp2 = toScreen(vertices[0].x + into.x, vertices[0].y + into.y)
     const first = toScreen(vertices[0].x, vertices[0].y)
     path.moveTo(last.x, last.y)
-    if (dragTangent) {
-      // Closing preview: segment last -> first, active handle belongs to first vertex.
-      const cp2 = toScreen(vertices[0].x + dragTangent.x, vertices[0].y + dragTangent.y)
-      path.cubicTo(last.x, last.y, cp2.x, cp2.y, first.x, first.y)
-    } else {
-      path.lineTo(first.x, first.y)
-    }
-    return path
+    path.cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, first.x, first.y)
+    return path.detachAndDelete()
   }
 
   if (cursorX == null || cursorY == null) return null
 
-  const path = new r.ck.Path()
+  const path = new r.ck.PathBuilder()
   const last = toScreen(vertices[vertices.length - 1].x, vertices[vertices.length - 1].y)
   const cursor = toScreen(cursorX, cursorY)
   path.moveTo(last.x, last.y)
@@ -82,7 +88,7 @@ function buildCursorPath(
   } else {
     path.lineTo(cursor.x, cursor.y)
   }
-  return path
+  return path.detachAndDelete()
 }
 
 function drawPenPaths(
@@ -99,10 +105,10 @@ function drawPenPaths(
   canvas.drawPath(segPath, r.penPathPaint)
   segPath.delete()
 
-  // 3) Draw cursor preview line with tech outline only
+  // 3) Draw the segment to the cursor in the selection color, as Figma previews the next segment
   const cursorPath = buildCursorPath(r, penState, toScreen)
   if (cursorPath) {
-    canvas.drawPath(cursorPath, r.penPathPaint)
+    canvas.drawPath(cursorPath, r.penVertexStroke)
     cursorPath.delete()
   }
 }
@@ -144,6 +150,17 @@ function drawPenTangentHandles(
     }
   }
 
+  const lastVertex = vertices.at(-1)
+  if (penState.pendingClose && penState.closeTangent && lastVertex) {
+    const s = toScreen(lastVertex.x, lastVertex.y)
+    const cp = toScreen(
+      lastVertex.x + penState.closeTangent.x,
+      lastVertex.y + penState.closeTangent.y
+    )
+    canvas.drawLine(s.x, s.y, cp.x, cp.y, handlePaint)
+    drawPenHandlePoint(canvas, cp.x, cp.y, vertexFill, handlePaint)
+  }
+
   if (dragTangent && vertices.length > 0) {
     // During closing, handles are on vertex 0; otherwise on the last vertex
     const anchor = penState.pendingClose ? vertices[0] : vertices[vertices.length - 1]
@@ -158,6 +175,27 @@ function drawPenTangentHandles(
     drawPenHandlePoint(canvas, cp1.x, cp1.y, vertexFill, handlePaint)
     drawPenHandlePoint(canvas, cp2.x, cp2.y, vertexFill, handlePaint)
   }
+}
+
+/** The pencil stroke as sampled so far, in the colour and width it will be drawn with. */
+export function drawPencilOverlay(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  pencilState: RenderOverlays['pencilState']
+): void {
+  if (!pencilState) return
+  const [first, ...rest] = pencilState.points
+  const path = new r.ck.PathBuilder()
+  path.moveTo(first.x * r.zoom + r.panX, first.y * r.zoom + r.panY)
+  if (rest.length === 0) path.lineTo(first.x * r.zoom + r.panX, first.y * r.zoom + r.panY)
+  for (const point of rest) path.lineTo(point.x * r.zoom + r.panX, point.y * r.zoom + r.panY)
+  const { color, weight } = pencilState.preview
+  const paint = r.pencilStrokePaint
+  paint.setColorComponents(color.r, color.g, color.b, color.a)
+  paint.setStrokeWidth(weight * r.zoom)
+  const stroke = path.detachAndDelete()
+  canvas.drawPath(stroke, paint)
+  stroke.delete()
 }
 
 export function drawPenOverlay(
@@ -179,8 +217,15 @@ export function drawPenOverlay(
   drawPenPaths(r, canvas, penState, toScreen)
   drawPenTangentHandles(canvas, penState, toScreen, r.penHandlePaint, vertexFill)
 
+  // The point the next segment starts from is solid, as in Figma; the others stay hollow.
+  const anchor = penState.pendingClose ? -1 : vertices.length - 1
   for (let i = 0; i < vertices.length; i++) {
     const v = toScreen(vertices[i].x, vertices[i].y)
+    if (i === anchor) {
+      r.auxFill.setColor(r.selColor())
+      canvas.drawCircle(v.x, v.y, PEN_ANCHOR_RADIUS, r.auxFill)
+      continue
+    }
     const radius =
       i === 0 && penState.closingToFirst
         ? PEN_VERTEX_RADIUS + PEN_CLOSE_RADIUS_BOOST
@@ -188,91 +233,11 @@ export function drawPenOverlay(
     canvas.drawCircle(v.x, v.y, radius, vertexFill)
     canvas.drawCircle(v.x, v.y, radius, vertexStroke)
   }
-}
 
-export function drawRemoteCursors(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  graph: SceneGraph,
-  cursors?: RenderOverlays['remoteCursors']
-): void {
-  if (!cursors || cursors.length === 0) return
-
-  const CURSOR_SIZE = 9
-  const LABEL_PADDING_X = 4
-  const LABEL_PADDING_Y = 2
-  const LABEL_FONT_SIZE = 10
-  const LABEL_OFFSET_X = 12
-  const LABEL_OFFSET_Y = 20
-
-  for (const cursor of cursors) {
-    const screenX = cursor.x * r.zoom + r.panX
-    const screenY = cursor.y * r.zoom + r.panY
-    const { r: cr, g, b } = cursor.color
-
-    if (cursor.selection?.length) {
-      r.auxStroke.setColor(r.ck.Color4f(cr, g, b, 0.6))
-      r.auxStroke.setStrokeWidth(1.5)
-      r.auxStroke.setPathEffect(null)
-      for (const nodeId of cursor.selection) {
-        const node = graph.getNode(nodeId)
-        if (!node) continue
-        const abs = graph.getAbsolutePosition(nodeId)
-        const sx = abs.x * r.zoom + r.panX
-        const sy = abs.y * r.zoom + r.panY
-        const sw = node.width * r.zoom
-        const sh = node.height * r.zoom
-        canvas.drawRect(r.ck.XYWHRect(sx, sy, sw, sh), r.auxStroke)
-      }
-    }
-
-    const S = CURSOR_SIZE
-    const path = new r.ck.Path()
-    path.moveTo(screenX, screenY)
-    path.lineTo(screenX, screenY + S * 1.35)
-    path.lineTo(screenX + S * 0.38, screenY + S * 1.0)
-    path.lineTo(screenX + S * 0.72, screenY + S * 1.5)
-    path.lineTo(screenX + S * 0.92, screenY + S * 1.38)
-    path.lineTo(screenX + S * 0.58, screenY + S * 0.88)
-    path.lineTo(screenX + S * 1.0, screenY + S * 0.82)
-    path.close()
-
-    r.auxStroke.setColor(r.ck.Color4f(1, 1, 1, 1))
-    r.auxStroke.setStrokeWidth(2)
-    r.auxStroke.setPathEffect(null)
-    canvas.drawPath(path, r.auxStroke)
-
-    r.auxFill.setColor(r.ck.Color4f(cr, g, b, 1))
-    canvas.drawPath(path, r.auxFill)
-    path.delete()
-
-    if (cursor.name) {
-      const font = r.labelFont
-      if (font) {
-        font.setSize(LABEL_FONT_SIZE)
-        const labelX = screenX + LABEL_OFFSET_X
-        const labelY = screenY + LABEL_OFFSET_Y
-        const glyphIds = font.getGlyphIDs(cursor.name)
-        const widths = font.getGlyphWidths(glyphIds)
-        let textWidth = 0
-        for (const w of widths) textWidth += w
-
-        r.auxFill.setColor(r.ck.Color4f(cr, g, b, 1))
-        const bgRect = r.ck.RRectXY(
-          r.ck.XYWHRect(
-            labelX - LABEL_PADDING_X,
-            labelY - LABEL_FONT_SIZE - LABEL_PADDING_Y + 2,
-            textWidth + LABEL_PADDING_X * 2,
-            LABEL_FONT_SIZE + LABEL_PADDING_Y * 2
-          ),
-          4,
-          4
-        )
-        canvas.drawRRect(bgRect, r.auxFill)
-
-        r.auxFill.setColor(r.ck.Color4f(1, 1, 1, 1))
-        canvas.drawText(cursor.name, labelX, labelY, r.auxFill, font)
-      }
-    }
+  // Where the next click puts a point; a snapped cursor shows its cross inside this ring.
+  const { cursorX, cursorY } = penState
+  if (cursorX != null && cursorY != null && !penState.pendingClose && !penState.closingToFirst) {
+    const cursor = toScreen(cursorX, cursorY)
+    canvas.drawCircle(cursor.x, cursor.y, PEN_VERTEX_RADIUS, vertexStroke)
   }
 }

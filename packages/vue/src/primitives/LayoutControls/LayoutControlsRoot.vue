@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { useLayout } from '#vue/controls/layout/use'
-import { provideLayoutControls } from '#vue/primitives/LayoutControls/context'
 import { proxyRefs } from 'vue'
 
+import { useLayout } from '#vue/controls/layout/use'
+import { provideLayoutControls } from '#vue/primitives/LayoutControls/context'
+import type { LayoutControlsRootSlots } from '#vue/primitives/LayoutControls/types'
+
 const ctx = useLayout()
+defineSlots<LayoutControlsRootSlots>()
 const actions = {
+  cancelPreview: ctx.cancelPreview,
   updateProp: ctx.updateProp,
   updateSizeLimit: ctx.updateSizeLimit,
   setSizeLimitToCurrent: ctx.setSizeLimitToCurrent,
@@ -12,8 +16,10 @@ const actions = {
   addSizeLimit: ctx.addSizeLimit,
   removeSizeLimit: ctx.removeSizeLimit,
   commitProp: ctx.commitProp,
-  setWidthSizing: ctx.setWidthSizing,
-  setHeightSizing: ctx.setHeightSizing,
+  setAxisSizing: ctx.setAxisSizing,
+  updateAxisSize: ctx.updateAxisSize,
+  commitAxisSize: ctx.commitAxisSize,
+  toggleAspectRatioLock: ctx.toggleAspectRatioLock,
   setHorizontalPadding: ctx.setHorizontalPadding,
   commitHorizontalPadding: ctx.commitHorizontalPadding,
   setVerticalPadding: ctx.setVerticalPadding,
@@ -46,6 +52,8 @@ provideLayoutControls(
     :height-sizing="ctx.heightSizing.value"
     :width-sizing-options="ctx.widthSizingOptions.value"
     :height-sizing-options="ctx.heightSizingOptions.value"
+    :aspect-ratio-locked="ctx.aspectRatioLocked.value"
+    :aspect-ratio-lockable="ctx.aspectRatioLockable.value"
     :align-grid="ctx.alignGrid.value"
     :show-individual-padding="ctx.showIndividualPadding.value"
     :has-uniform-padding="ctx.hasUniformPadding.value"

@@ -1,45 +1,121 @@
 import type { FigmaAPI } from '@open-pencil/core/figma-api'
 
-import { createAutomationEvalHandler } from '@/app/automation/bridge/eval-handler'
-import { handleExport, handleExportJsx } from '@/app/automation/bridge/export-handlers'
+import { agentChatStore } from '@/app/ai/reply/run'
+import { agentSessionOpened, endAgentSession, readAgentSession } from '@/app/automation/agents'
 import {
-  handleNewDocument,
-  handleOpenFile,
-  handleSaveFile
-} from '@/app/automation/bridge/file-handlers'
-import { handleRpcFallback } from '@/app/automation/bridge/rpc-handler'
+  handleActivateDocument,
+  handleGetSettings,
+  handleListRecentFiles,
+  handleRedo,
+  handleUndo,
+  handleUpdateSettings
+} from '@/app/automation/bridge/app-handlers'
+import { createAutomationEvalHandler } from '@/app/automation/bridge/eval-handler'
+import { handleExport, handleExportJSX } from '@/app/automation/bridge/export-handlers'
+import { createFileHandlers, type AutomationFiles } from '@/app/automation/bridge/file-handlers'
+import { handleRPCFallback } from '@/app/automation/bridge/rpc-handler'
 import { handleSelection } from '@/app/automation/bridge/selection-handler'
+import {
+  isUnknownRecord,
+  listAutomationDocuments,
+  resolveAutomationTarget,
+  responseWithTarget,
+  stripAutomationTargetArgs,
+  type AutomationTarget,
+  type UnknownRecord
+} from '@/app/automation/bridge/target'
 import { createAutomationToolHandler } from '@/app/automation/bridge/tool-handlers'
 import type { EditorStore } from '@/app/editor/active-store'
 
-type FigmaFactory = () => FigmaAPI
+type FigmaFactory = (store: EditorStore, pageId?: string, signal?: AbortSignal) => FigmaAPI
 
-type CommandHandler = (store: EditorStore, args: unknown) => Promise<unknown>
+/** Runs a command; `signal` aborts once the caller stops waiting, as an MCP timeout does. */
+type CommandHandler = (
+  target: AutomationTarget,
+  args: unknown,
+  signal?: AbortSignal
+) => Promise<unknown>
 
-export function createAutomationCommandHandlers(makeFigma: FigmaFactory) {
+export function createAutomationCommandHandlers(makeFigma: FigmaFactory, files?: AutomationFiles) {
   const handleEval = createAutomationEvalHandler(makeFigma)
   const handleTool = createAutomationToolHandler(makeFigma)
+  const { handleSaveFile, handleCloseFile, handleNewDocument, handleOpenFile } =
+    createFileHandlers(files)
 
   const commandHandlers: Partial<Record<string, CommandHandler>> = {
     eval: handleEval,
     tool: handleTool,
     export: handleExport,
-    export_jsx: handleExportJsx,
+    export_jsx: handleExportJSX,
     selection: handleSelection,
-    save_file: handleSaveFile,
-    new_document: handleNewDocument,
-    open_file: handleOpenFile
+    save_document: handleSaveFile,
+    close_document: handleCloseFile,
+    create_document: handleNewDocument,
+    open_document: handleOpenFile,
+    activate_document: handleActivateDocument,
+    undo: handleUndo,
+    redo: handleRedo
+  }
+
+  /** Runs a command on a resolved document page, loading the page first if it was never shown. */
+  async function handleTargetCommand(
+    target: AutomationTarget,
+    command: string,
+    args: UnknownRecord,
+    signal?: AbortSignal
+  ): Promise<unknown> {
+    if (!(await target.store.preparePageNodes(target.pageId))) {
+      throw new Error(`Page "${target.pageId}" was closed before it finished loading`)
+    }
+    signal?.throwIfAborted()
+    const handler = commandHandlers[command]
+    const result = handler
+      ? await handler(target, args, signal)
+      : await handleRPCFallback(target, command, args)
+    return responseWithTarget(result, target)
   }
 
   async function handleRequest(
     store: EditorStore,
     command: string,
-    args: unknown
+    args: unknown,
+    signal?: AbortSignal
   ): Promise<unknown> {
-    const handler = commandHandlers[command]
-    if (handler) return handler(store, args)
-    return handleRpcFallback(store, command, args)
+    if (command === 'list_documents') {
+      return { ok: true, result: { documents: listAutomationDocuments(store) } }
+    }
+    if (command === 'list_recent_documents') return handleListRecentFiles()
+    if (command === 'agent_session_opened') {
+      agentSessionOpened(args)
+      return { ok: true, result: null }
+    }
+    if (command === 'agent_session_closed') {
+      const session = isUnknownRecord(args) ? args.session : undefined
+      if (typeof session === 'string') endAgentSession(session)
+      return { ok: true, result: null }
+    }
+    if (command === 'get_settings') return handleGetSettings()
+    if (command === 'update_settings') return handleUpdateSettings(args)
+
+    if (command === 'open_document' || command === 'create_document') {
+      const handler = commandHandlers[command]
+      if (handler) return handler(resolveAutomationTarget(store, undefined), args)
+    }
+
+    const rawArgs = isUnknownRecord(args) ? args : {}
+    // An ACP chat's agent works on the chat's document unless a call names another; once the
+    // chat is gone, a late call must name one rather than land in whatever tab is in front.
+    const chat = readAgentSession(rawArgs.agent)?.chat
+    const chatStore = agentChatStore(chat)
+    const namesDocument = typeof rawArgs.document_id === 'string' && rawArgs.document_id.length > 0
+    if (chat !== undefined && !chatStore && !namesDocument) {
+      throw new Error(
+        'The chat this agent works for is closed. Pass document_id from list_documents to work on an open document.'
+      )
+    }
+    const target = resolveAutomationTarget(chatStore ?? store, rawArgs)
+    return handleTargetCommand(target, command, stripAutomationTargetArgs(rawArgs), signal)
   }
 
-  return { handleRequest }
+  return { handleRequest, handleTargetCommand }
 }

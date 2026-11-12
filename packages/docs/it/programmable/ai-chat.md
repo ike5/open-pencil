@@ -1,64 +1,54 @@
 ---
-title: Chat IA
-description: Assistente IA integrato con oltre 90 strumenti per creare e modificare design.
+title: Chat con AI
+description: Assistente integrato con oltre 90 strumenti per creare, modificare e analizzare design.
 ---
 
-# Chat IA
+# Chat con AI
 
-Premi <kbd>⌘</kbd><kbd>J</kbd> (<kbd>Ctrl</kbd> + <kbd>J</kbd>) per aprire l'assistente IA. Descrivi cosa vuoi — crea forme, imposta stili, gestisce il layout, lavora con i componenti e analizza il tuo design.
+Premi <kbd>⌘</kbd><kbd>J</kbd> o <kbd>Ctrl</kbd><kbd>J</kbd>. L’assistente può creare forme, modificare stili, configurare disposizioni, lavorare con componenti e analizzare il documento.
 
-## Configurazione
+## Configurare i modelli
 
-1. Apri il pannello chat IA (<kbd>⌘</kbd><kbd>J</kbd>)
-2. Clicca sull'icona delle impostazioni
-3. Scegli un provider e inserisci la tua chiave API
-4. Seleziona un modello
+Al primo avvio, la configurazione guidata chiede in cosa deve aiutarti l’IA e cosa usi già: un agente di programmazione come Claude Code, Codex, Antigravity CLI, Gemini CLI, Cursor o Grok Build nell’app desktop, un account API o un server locale o aziendale. Collega quell’accesso e lo assegna ai ruoli **Design agent** e **Vision**, lasciando invariato ciò che hai configurato a mano. Con OpenRouter puoi accedere invece di incollare una chiave API. Puoi saltarla e riavviarla da **Impostazioni → IA e agenti → Avvia la configurazione guidata**. Per configurare i modelli a mano:
 
-### Provider supportati
+1. Apri la chat.
+2. Seleziona l’icona delle impostazioni.
+3. Aggiungi un profilo e configura connessione, identificatore del modello, credenziali e capacità.
 
-| Provider | Modelli | Configurazione |
-|----------|---------|----------------|
-| **OpenRouter** | Claude, GPT-4, Gemini, DeepSeek e altri | Chiave API da [openrouter.ai](https://openrouter.ai) |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus, ecc. | Chiave API da [console.anthropic.com](https://console.anthropic.com) |
-| **OpenAI** | GPT-4o, GPT-4, ecc. | Chiave API da [platform.openai.com](https://platform.openai.com) |
-| **Google AI** | Gemini 2.0, Gemini 1.5, ecc. | Chiave API da [aistudio.google.dev](https://aistudio.google.dev) |
-| **Compatibile OpenAI** | Qualsiasi endpoint con formato API OpenAI | URL base personalizzato + chiave. Supporta toggle tra API Completions e Responses. |
-| **Compatibile Anthropic** | Qualsiasi endpoint con formato API Anthropic | URL base personalizzato + chiave |
+Puoi salvare più profili e assegnarli separatamente a design, revisioni, attività rapide e immagini. I profili che condividono una connessione riutilizzano la stessa credenziale, archiviata in modo sicuro.
 
-Nessun backend, nessun abbonamento — la tua chiave comunica direttamente con il provider.
+## Provider
 
-## Funzionalità
+OpenPencil supporta connessioni compatibili con OpenAI e Anthropic, oltre a OpenRouter, Google, Z.ai e provider locali.
 
-L'assistente dispone di oltre 90 strumenti in queste categorie:
+Non usa un server intermedio. Le richieste vengono inviate direttamente al provider; nel browser si applicano le sue regole CORS. L’affidabilità delle chiamate agli strumenti in streaming può variare tra i deployment. Consulta la [compatibilità BYOK](/programmable/byok-provider-compatibility).
 
-- **Creare** — frame, forme, testo, componenti, pagine. Rendering JSX per layout complessi.
-- **Stile** — riempimenti, contorni, effetti, opacità, raggio dei bordi, modalità di fusione.
-- **Layout** — auto-layout, griglia, allineamento, spaziatura, dimensionamento.
-- **Componenti** — creare componenti, istanze, set di componenti. Gestire le sovrascritture.
-- **Variabili** — creare/modificare variabili, collezioni, modalità. Collegare ai riempimenti.
-- **Query** — trovare nodi, selettori XPath, leggere proprietà, elencare pagine, font, selezione.
-- **Ispezionare** — `get_jsx` per vista JSX, `diff_jsx` per differenze strutturali, `describe` per ruolo semantico e problemi di design.
-- **Analizzare** — palette colori, audit tipografico, coerenza degli spazi, rilevamento di pattern.
-- **Esportare** — PNG, SVG, JSX con classi Tailwind. Verifica visiva tramite `export_image`.
-- **Vettoriale** — operazioni booleane, manipolazione tracciati.
+## Agenti ACP e MCP remoto
+
+L’app desktop può avviare agenti ACP e collegarli a server remoti attendibili compatibili con [Model Context Protocol](https://modelcontextprotocol.io/). In **Impostazioni → Connessioni MCP**, aggiungi un endpoint HTTP trasmissibile, un nome e, se necessario, un token Bearer.
+
+Il token è conservato nell’archivio sicuro delle credenziali, non nelle normali impostazioni, e viene recuperato solo all’avvio della sessione ACP.
+
+## Strumenti
+
+Gli strumenti coprono lettura, creazione, modifica, struttura, variabili, vettori, analisi, descrizione, generazione di codice e immagini stock. Ogni chiamata agisce sull’editor attivo e partecipa alla cronologia quando applicabile.
+
+Per l’ispezione, `get_jsx` offre la vista JSX di andata e ritorno, `diff_nodes` i confronti strutturali, `diff_pixels` i confronti pixel per pixel e `describe` il ruolo semantico e il rilevamento dei problemi di design.
+
+## Skill
+
+Le skill sono cartelle con un `SKILL.md` nel formato [Agent Skills](https://agentskills.io/specification): istruzioni per un tipo di lavoro, con file di riferimento facoltativi. L’IA integrata vede nome e descrizione di ogni skill attiva e ne carica le istruzioni quando una richiesta corrisponde; gli script di una skill non vengono eseguiti.
+
+In **Impostazioni → Skill** carica una skill come ZIP della sua cartella o come `SKILL.md`. Nell’app desktop vengono lette anche `~/.agents/skills` e `~/.claude/skills`, e le cartelle `.agents/skills` e `.claude/skills` accanto al documento aperto, usate solo dopo **Fidati della cartella**. Digita `/` all’inizio di un messaggio per scegliere una skill e `@` per menzionare un livello, una pagina o una skill. Le menzioni appaiono come chip, anche nelle risposte; un clic mostra il livello sulla tela.
 
 ## Verifica visiva
 
-L'assistente può verificare visivamente il suo lavoro. Dopo aver creato o modificato design, utilizza `export_image` per catturare un'immagine e confrontare il risultato con la richiesta originale.
+L’assistente può verificare visivamente il proprio lavoro. Con `export_image` abilitato, cattura un’immagine dopo aver creato o modificato un design e controlla il risultato rispetto alla richiesta, individuando problemi di disposizione, elementi mancanti e colori sbagliati che una risposta solo testuale non rileverebbe. `diff_pixels`, abilitato per impostazione predefinita, confronta un oggetto modificato con una copia di riferimento e restituisce i pixel e l’area cambiati, così l’assistente può confermare che la modifica sia rimasta nel bersaglio previsto.
 
-## Esempi di prompt
+## Lavorare su altre pagine
 
-- "Crea una card con titolo, descrizione e un pulsante blu"
-- "Fai in modo che tutti i pulsanti di questa pagina usino lo stesso raggio dei bordi"
-- "Quali font sono usati in questo file?"
-- "Cambia lo sfondo del frame selezionato con un gradiente dal blu al viola"
-- "Esporta il frame selezionato come SVG"
-- "Mostrami il JSX di questo frame"
+Mentre una risposta è in corso puoi esplorare altre pagine: l’assistente continua a lavorare sulla pagina in cui è partito il messaggio e le sue anteprime compaiono al tuo ritorno. Quando non sei su quella pagina, la chat indica su quale sta lavorando, con **Vai alla pagina** per tornarci. Se è l’assistente a cambiare pagina, la tua vista lo segue.
 
-## Suggerimenti
+## Privacy e costi
 
-- Seleziona i nodi prima di chiedere — l'assistente sa cosa è selezionato.
-- Sii specifico su colori, dimensioni e posizioni per risultati precisi.
-- L'assistente può modificare più nodi in un singolo messaggio.
-- Usa "annulla" nell'editor — le mutazioni IA supportano l'annullamento completo.
-- Tutti i layout vengono ricalcolati automaticamente dopo ogni esecuzione di strumento.
+Le richieste vanno al provider configurato. Verifica condizioni, politica dei dati e prezzi prima di inviare documenti sensibili. OpenPencil non include crediti per i modelli.

@@ -1,27 +1,33 @@
+import * as v from 'valibot'
+
+import { graphOf } from '#core/figma-api/graph'
 import { defineTool } from '#core/tools/schema'
 
 export const nodeReplaceWith = defineTool({
-  name: 'node_replace_with',
-  mutates: true,
+  name: 'replace_node',
+
   description: 'Replace a node with JSX content.',
-  params: {
-    id: { type: 'string', description: 'Node ID to replace', required: true },
-    jsx: { type: 'string', description: 'JSX string for the replacement', required: true }
-  },
+  execution: { kind: 'async', mutation: 'document' },
+  input: v.strictObject({
+    id: v.pipe(v.string(), v.description('Node ID to replace')),
+    jsx: v.pipe(v.string(), v.description('JSX string for the replacement'))
+  }),
   execute: async (figma, args) => {
+    const { designJSXRenderer } = await graphOf(figma).waitOutsideEdit(import('#core/design-jsx'))
     const node = figma.getNodeById(args.id)
     if (!node) return { error: `Node "${args.id}" not found` }
     const parentId = node.parent?.id ?? figma.currentPageId
     const x = node.x
     const y = node.y
     node.remove()
-    const { renderJSX } = await import('#core/design-jsx/render.js')
-    const results = await renderJSX(figma.graph, args.jsx, { parentId, x, y })
+    const { renderJSX } = designJSXRenderer(figma.icons)
+    const results = await renderJSX(graphOf(figma), args.jsx, { parentId, x, y })
     const result = results[0]
     return {
       id: result.id,
       name: result.name,
       type: result.type,
+      ...(result.warnings ? { warnings: result.warnings } : {}),
       children: results
         .slice(1)
         .map((child) => ({ id: child.id, name: child.name, type: child.type }))

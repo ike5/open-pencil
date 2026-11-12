@@ -1,4 +1,7 @@
-import type { CharacterStyleOverride, StyleRun, TextDecoration } from '#core/scene-graph'
+import { omit } from 'es-toolkit/object'
+import { isEqual } from 'es-toolkit/predicate'
+
+import type { CharacterStyleOverride, StyleRun, TextDecoration } from '@open-pencil/scene-graph'
 
 export function getStyleAt(runs: StyleRun[], index: number): CharacterStyleOverride {
   for (const run of runs) {
@@ -49,8 +52,9 @@ export function removeStyleFromRange(
 
   for (let i = start; i < end && i < textLength; i++) {
     if (chars[i]) {
-      const copy = { ...chars[i] }
-      for (const k of keys) delete copy[k]
+      const current = chars[i]
+      if (!current) continue
+      const copy = omit(current, keys) as CharacterStyleOverride
       chars[i] = Object.keys(copy).length > 0 ? copy : null
     }
   }
@@ -68,18 +72,6 @@ export function selectionHasStyle(
   for (let i = start; i < end; i++) {
     const style = getStyleAt(runs, i)
     if (style[key] !== value) return false
-  }
-  return true
-}
-
-function stylesEqual(a: CharacterStyleOverride | null, b: CharacterStyleOverride | null): boolean {
-  if (a === b) return true
-  if (!a || !b) return a === b
-  const aKeys = Object.keys(a) as (keyof CharacterStyleOverride)[]
-  const bKeys = Object.keys(b) as (keyof CharacterStyleOverride)[]
-  if (aKeys.length !== bKeys.length) return false
-  for (const k of aKeys) {
-    if (a[k] !== b[k]) return false
   }
   return true
 }
@@ -102,26 +94,70 @@ function compactRuns(chars: (CharacterStyleOverride | null)[]): StyleRun[] {
       i++
       continue
     }
-    while (i < chars.length && stylesEqual(chars[i], style)) i++
+    while (i < chars.length && isEqual(chars[i], style)) i++
     result.push({ start, length: i - start, style: { ...style } })
   }
   return result
 }
 
-export function adjustRunsForInsert(
+/** Which neighbour inserted characters copy their style from, as Figma's `insertCharacters` takes it. */
+export type InsertStyleSource = 'BEFORE' | 'AFTER'
+
+/**
+ * The style inserted characters take, as Figma gives it: the preceding character's for `BEFORE`
+ * and the following one's for `AFTER`, or the closest character's at either end of the text.
+ */
+export function insertedStyleAt(
+  runs: StyleRun[],
+  textLength: number,
+  start: number,
+  useStyle: InsertStyleSource
+): CharacterStyleOverride {
+  if (textLength === 0) {
+    return {}
+  }
+  const preferred = useStyle === 'BEFORE' ? start - 1 : start
+  const index = Math.min(Math.max(preferred, 0), textLength - 1)
+  return getStyleAt(runs, index)
+}
+
+/**
+ * The runs after `length` characters are inserted at `pos`, the new characters all in `style`
+ * and every other character keeping its own. Works on the runs, not on each character, so a
+ * long insert costs no more than a short one.
+ */
+export function insertRunsWithStyle(
   runs: StyleRun[],
   pos: number,
-  insertLength: number
+  length: number,
+  style: CharacterStyleOverride
 ): StyleRun[] {
-  return runs.map((run) => {
-    if (pos <= run.start) {
-      return { ...run, start: run.start + insertLength }
+  const moved: StyleRun[] = []
+  for (const run of runs) {
+    const end = run.start + run.length
+    if (end <= pos) moved.push(run)
+    else if (run.start >= pos) moved.push({ ...run, start: run.start + length })
+    else {
+      // The insert splits this run in two around the new characters.
+      moved.push({ ...run, length: pos - run.start })
+      moved.push({ ...run, start: pos + length, length: end - pos })
     }
-    if (pos > run.start && pos < run.start + run.length) {
-      return { ...run, length: run.length + insertLength }
+  }
+  if (length > 0 && !isEmptyStyle(style)) moved.push({ start: pos, length, style: { ...style } })
+  moved.sort((first, second) => first.start - second.start)
+  const insertEdges = new Set([pos, pos + length])
+  const merged: StyleRun[] = []
+  for (const run of moved) {
+    const last = merged.at(-1)
+    const meetsAtInsertEdge =
+      last !== undefined && last.start + last.length === run.start && insertEdges.has(run.start)
+    if (last && meetsAtInsertEdge && isEqual(last.style, run.style)) {
+      merged[merged.length - 1] = { ...last, length: last.length + run.length }
+    } else {
+      merged.push(run)
     }
-    return run
-  })
+  }
+  return merged
 }
 
 export function adjustRunsForDelete(
@@ -152,6 +188,19 @@ export function adjustRunsForDelete(
     }
   }
   return result
+}
+
+export function runsAfterTyping(
+  runs: StyleRun[],
+  textLength: number,
+  start: number,
+  end: number,
+  typedLength: number
+): StyleRun[] {
+  const replacesSelection = end > start
+  const style = insertedStyleAt(runs, textLength, start, replacesSelection ? 'AFTER' : 'BEFORE')
+  const remaining = replacesSelection ? adjustRunsForDelete(runs, start, end - start) : runs
+  return insertRunsWithStyle(remaining, start, typedLength, style)
 }
 
 export function toggleBoldInRange(

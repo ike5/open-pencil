@@ -1,10 +1,12 @@
 import { defineCommand } from 'citty'
+import { mean, sumBy } from 'es-toolkit'
 
 import type { AnalyzeClustersResult } from '@open-pencil/core/rpc'
 import { calcClusterConfidence } from '@open-pencil/core/tools'
 
+import { appTargetOptions } from '#cli/app/target'
 import { bold, fmtList, fmtSummary } from '#cli/format'
-import { loadRpcData } from '#cli/rpc-data'
+import { loadRPCData } from '#cli/rpc-data'
 
 function formatSignature(sig: string): string {
   const [typeSize, children] = sig.split('|')
@@ -34,14 +36,20 @@ export default defineCommand({
     limit: { type: 'string', description: 'Max clusters to show', default: '20' },
     'min-size': { type: 'string', description: 'Min node size in px', default: '30' },
     'min-count': { type: 'string', description: 'Min instances to form cluster', default: '2' },
+    ...appTargetOptions,
     json: { type: 'boolean', description: 'Output as JSON' }
   },
   async run({ args }) {
-    const data = await loadRpcData<AnalyzeClustersResult>(args.file, 'analyze_clusters', {
-      limit: Number(args.limit),
-      minSize: Number(args['min-size']),
-      minCount: Number(args['min-count'])
-    })
+    const data = await loadRPCData<AnalyzeClustersResult>(
+      args.file,
+      'analyze_clusters',
+      {
+        limit: Number(args.limit),
+        minSize: Number(args['min-size']),
+        minCount: Number(args['min-count'])
+      },
+      args
+    )
 
     if (args.json) {
       console.log(JSON.stringify(data, null, 2))
@@ -65,8 +73,8 @@ export default defineCommand({
       const heights = c.nodes.map((n) => n.height)
       const wRange = Math.max(...widths) - Math.min(...widths)
       const hRange = Math.max(...heights) - Math.min(...heights)
-      const avgW = Math.round(widths.reduce((a, b) => a + b, 0) / widths.length)
-      const avgH = Math.round(heights.reduce((a, b) => a + b, 0) / heights.length)
+      const avgW = Math.round(mean(widths))
+      const avgH = Math.round(mean(heights))
 
       const sizeStr =
         wRange <= 4 && hRange <= 4
@@ -88,7 +96,7 @@ export default defineCommand({
 
     console.log(fmtList(items, { numbered: true }))
 
-    const clusteredNodes = data.clusters.reduce((sum, c) => sum + c.nodes.length, 0)
+    const clusteredNodes = sumBy(data.clusters, (c) => c.nodes.length)
     console.log('')
     console.log(
       fmtSummary({

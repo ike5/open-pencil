@@ -56,6 +56,8 @@ OpenPencil uses the .fig format for full documents — the same binary format as
 
 A file picker dialog opens, filtered for `.fig` and `.pen` files. On the desktop app, this uses the native OS dialog.
 
+You can also drag a `.fig`, `.pen`, or other supported document onto the window; it opens in a new tab. Images and SVG files dropped on the canvas are placed in the document instead, and any other file reports that it can't be opened.
+
 ### Saving Files
 
 | Action | Mac | Windows / Linux |
@@ -67,6 +69,8 @@ A file picker dialog opens, filtered for `.fig` and `.pen` files. On the desktop
 - **Save As** opens a save dialog to choose a new location
 
 Saved files are compressed and include a thumbnail image for preview in file browsers.
+
+With nothing selected, the **Document** section of the Design panel sets how tightly the document is compressed. **Fast** matches Figma's own saves. **Smaller** and **Smallest** make the file smaller and take longer to save, which is most noticeable on large documents and least on files made mostly of images. The choice is stored in the file, and Figma opens all three.
 
 ### Round-trip Compatibility
 

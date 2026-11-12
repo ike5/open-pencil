@@ -1,7 +1,10 @@
-import { colorToHex } from '#core/color'
-import type { SceneGraph, Variable } from '#core/scene-graph'
+import type { SceneGraph, Variable, VariableType } from '@open-pencil/scene-graph'
+import { colorToHex } from '@open-pencil/scene-graph/color'
+import { formatVariableFormula } from '@open-pencil/scene-graph/variables'
 
-import type { RpcCommand } from './types'
+import { exportTokenStylesheet, type TokenExport } from '#core/tools/codegen/tokens'
+
+import type { RPCCommand } from './types'
 
 // ── variables ──
 
@@ -11,7 +14,7 @@ export interface VariablesArgs {
 }
 
 function formatVariableValue(variable: Variable, graph: SceneGraph): string {
-  const modeId = graph.getActiveModeId(variable.collectionId)
+  const modeId = graph.variableCollections.get(variable.collectionId)?.defaultModeId ?? ''
   const raw = variable.valuesByMode[modeId]
 
   if (typeof raw === 'object' && 'aliasId' in raw) {
@@ -21,6 +24,16 @@ function formatVariableValue(variable: Variable, graph: SceneGraph): string {
 
   if (typeof raw === 'object' && 'r' in raw) {
     return colorToHex(raw).toLowerCase()
+  }
+  if (typeof raw === 'object' && 'expression' in raw) {
+    // A formula reads as written, with what it gives now; a composed color by its result.
+    const resolved = graph.resolveVariable(variable.id, modeId)
+    let result = '—'
+    if (typeof resolved === 'object') result = colorToHex(resolved).toLowerCase()
+    else if (resolved !== undefined) result = String(resolved)
+    return raw.expression === 'FORMULA'
+      ? `${formatVariableFormula(graph, raw)} = ${result}`
+      : result
   }
 
   return String(raw)
@@ -42,7 +55,7 @@ export interface VariablesResult {
   totalCollections: number
 }
 
-export const variablesCommand: RpcCommand<VariablesArgs, VariablesResult> = {
+export const variablesCommand: RPCCommand<VariablesArgs, VariablesResult> = {
   name: 'variables',
   execute: (graph, args) => {
     const typeFilter = args.type?.toUpperCase()
@@ -77,5 +90,51 @@ export const variablesCommand: RpcCommand<VariablesArgs, VariablesResult> = {
     }
 
     return result
+  }
+}
+
+// ── tokens ──
+
+export interface TokensArgs {
+  format?: string
+  collection?: string
+  type?: string
+}
+
+export type TokensResult = TokenExport
+
+const VARIABLE_TYPES: readonly VariableType[] = ['COLOR', 'FLOAT', 'STRING', 'BOOLEAN']
+
+function variableType(value: string | undefined): VariableType | undefined {
+  if (!value) return undefined
+  const type = VARIABLE_TYPES.find((candidate) => candidate === value.toUpperCase())
+  if (!type) throw new Error(`Unknown variable type: ${value}. Use ${VARIABLE_TYPES.join(', ')}.`)
+  return type
+}
+
+/** W3C design token files instead of a stylesheet, for `--format dtcg`. */
+async function designTokenFiles(graph: SceneGraph): Promise<TokensResult> {
+  const { designTokenIssueMessage, exportDesignTokens } =
+    await import('#core/io/formats/design-tokens')
+  const { files, issues } = exportDesignTokens(graph)
+  return {
+    css: '',
+    tokenCount: graph.variables.size,
+    issues: issues.map(designTokenIssueMessage),
+    files
+  }
+}
+
+export const tokensCommand: RPCCommand<TokensArgs, TokensResult> = {
+  name: 'tokens',
+  execute: (graph, args) => {
+    if (args.format === 'dtcg') return designTokenFiles(graph)
+    if (args.format && args.format !== 'css' && args.format !== 'tailwind')
+      throw new Error(`Unknown token format: ${args.format}. Use css, tailwind, or dtcg.`)
+    return exportTokenStylesheet(graph, {
+      format: args.format === 'tailwind' ? 'tailwind' : 'css',
+      collection: args.collection,
+      type: variableType(args.type)
+    })
   }
 }

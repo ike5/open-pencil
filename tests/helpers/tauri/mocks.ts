@@ -1,9 +1,5 @@
 export function installTauriMockWindow() {
-  const windowLike = globalThis as typeof globalThis & {
-    __TAURI_INTERNALS__?: unknown
-    __TAURI_EVENT_PLUGIN_INTERNALS__?: unknown
-  }
-  Object.assign(globalThis, { window: windowLike })
+  Object.assign(globalThis, { window: globalThis })
 }
 
 export async function mockTauriIPC(
@@ -24,4 +20,16 @@ export async function clearTauriMocks() {
   if (!('window' in globalThis)) return
   const { clearMocks } = await import('@tauri-apps/api/mocks')
   clearMocks()
+  Reflect.deleteProperty(window, '__TAURI_INTERNALS__')
+  Reflect.deleteProperty(window, '__TAURI_EVENT_PLUGIN_INTERNALS__')
+  Reflect.deleteProperty(globalThis, 'window')
+}
+
+/** An event plugin-shell sends a spawned process's listeners, such as `Stdout` or `Terminated`. */
+export type ShellEvent = { event: string; payload: unknown }
+
+/** Delivers events to the process a mocked `plugin:shell|spawn` call started. */
+export function shellEvents(spawnArgs: unknown): (event: ShellEvent) => void {
+  const { onEvent } = spawnArgs as { onEvent: { onmessage: (event: ShellEvent) => void } }
+  return (event) => onEvent.onmessage(event)
 }

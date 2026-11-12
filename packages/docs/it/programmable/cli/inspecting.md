@@ -1,98 +1,68 @@
 ---
-title: Ispezione dei File
-description: Esplora alberi di nodi, cerca per nome o tipo e analizza le proprietà dal terminale.
+title: Esaminare file con la CLI
+description: Consultare pagine, oggetti, gerarchie, variabili e formati dei documenti `.fig`.
 ---
 
-# Ispezione dei File
+# Esaminare file con la CLI
 
-La CLI ti permette di esplorare file `.fig` senza aprire l'editor. Ogni comando funziona anche con l'app in esecuzione — basta omettere l'argomento del file.
-
-::: tip Installazione
-```sh
-bun add -g @open-pencil/cli
-# oppure
-brew install open-pencil/tap/open-pencil
-```
-:::
-
-## Informazioni sul Documento
-
-Ottieni una panoramica rapida — conteggio pagine, nodi totali, font utilizzati, dimensione del file:
+La CLI permette di capire la struttura di un file senza aprire l’editor.
 
 ```sh
-open-pencil info design.fig
+bun open-pencil info design.fig
+bun open-pencil pages design.fig
+bun open-pencil tree design.fig
 ```
 
-## Albero dei Nodi
+## Riepilogo
 
-Stampa l'intera gerarchia dei nodi:
+`info` mostra formato, versione, numero di pagine e oggetti, dimensioni dell’area di lavoro, font, variabili e metadati principali.
+
+## Pagine e albero
+
+`pages` elenca le pagine. `tree` stampa la gerarchia e può limitare profondità, pagina o numero di risultati.
+
+## Cercare oggetti
+
+`find` cerca per nome, tipo o altri criteri.
+
+## Mostrare un oggetto
+
+`node` mostra le proprietà dell’identificatore indicato, tra cui geometria, stile, relazioni e dati specifici del tipo.
+
+## Variabili e formati
+
+`variables` elenca raccolte, modalità, tipi e valori. `formats` mostra i formati registrati e le capacità di lettura e scrittura.
+
+## Modalità app in esecuzione
+
+Con l’app desktop in esecuzione, ometti il file: la CLI si collega tramite RPC.
 
 ```sh
-open-pencil tree design.fig
+openpencil documents list    # elenca gli ID di documenti e pagine aperti
+openpencil tree              # esamina il documento attivo
+openpencil tree --document-id tab-123 --page-id 0:1
+openpencil eval --document-id tab-123 --page-id 0:1 -c "..."
 ```
 
-```
-[0] [page] "Getting started" (0:46566)
-  [0] [section] "" (0:46567)
-    [0] [frame] "Body" (0:46568)
-      [0] [frame] "Introduction" (0:46569)
-        [0] [frame] "Introduction Card" (0:46570)
-          [0] [frame] "Guidance" (0:46571)
-```
+Nei flussi di lavoro con agenti usa `openpencil documents list --json`, poi passa esplicitamente `--document-id` e `--page-id` invece di affidarti alla scheda o pagina attiva. Per aprire, salvare, cambiare e chiudere documenti, annullare, modificare le impostazioni o chiamare qualsiasi strumento dell’editor, vedi [Controllare l’app](/programmable/cli/app-control).
 
-## Trova Nodi
-
-Cerca per tipo:
+## Lint dei design
 
 ```sh
-open-pencil find design.fig --type TEXT
+openpencil lint design.fig --preset strict
+openpencil lint design.fig --rule color-contrast
+openpencil lint design.fig --list-rules
+openpencil lint design.fig --fix -o fixed.fig
 ```
 
-Cerca per nome:
-
-```sh
-open-pencil find design.fig --name "Button"
-```
-
-Entrambi i flag possono essere combinati per restringere ulteriormente i risultati.
-
-## Dettagli del Nodo
-
-Ispeziona tutte le proprietà di un nodo specifico tramite il suo ID:
-
-```sh
-open-pencil node design.fig --id 1:23
-```
-
-## Pagine
-
-Elenca tutte le pagine del documento:
-
-```sh
-open-pencil pages design.fig
-```
-
-## Variabili
-
-Elenca le variabili di design e le relative collezioni:
-
-```sh
-open-pencil variables design.fig
-```
-
-## Modalità App in Esecuzione
-
-Quando l'app desktop è in esecuzione, ometti l'argomento del file — la CLI si connette tramite RPC e opera sul canvas attivo:
-
-```sh
-open-pencil tree              # ispeziona il documento attivo
-open-pencil eval -c "..."     # interroga l'editor
-```
+Usa `--json` per un output leggibile dalle macchine; ogni messaggio include `fix` e `suggestions` come dati. `--fix` applica le correzioni sicure (collega i colori alla variabile di colore corrispondente e arrotonda la geometria a pixel interi) e scrive il risultato nel file `.fig` indicato con `-o`.
 
 ## Output JSON
 
-Tutti i comandi supportano `--json` per output leggibile dalle macchine — invia tramite pipe a `jq`, usa negli script CI o elabora con altri strumenti:
+I comandi di consultazione supportano `--json`, adatto a `jq`, CI e programmi che richiedono un output stabile e leggibile dalle macchine.
 
 ```sh
-open-pencil tree design.fig --json | jq '.[] | .name'
+bun open-pencil pages design.fig --json | jq '.[].name'
 ```
+
+Usa `bun open-pencil --help` o aggiungi `--help` a un sottocomando per vedere tutte le opzioni.

@@ -1,12 +1,42 @@
-import type { Canvas, EmbindEnumEntity, Path } from 'canvaskit-wasm'
+import type { Canvas } from '@open-pencil/canvaskit'
+import { type SceneNode, type SceneGraph, type Fill } from '@open-pencil/scene-graph'
+import { getNodeLocalMatrix } from '@open-pencil/scene-graph/coordinate'
+import { drawnBlurRadius, widestBlurRadius } from '@open-pencil/scene-graph/geometry'
+import Matrix, { type Mat3 } from '@open-pencil/scene-graph/matrix'
+import { isLayerContainer } from '@open-pencil/scene-graph/node-defaults'
+import { textLinesOverflow } from '@open-pencil/scene-graph/text'
 
-import { DROP_HIGHLIGHT_ALPHA, DROP_HIGHLIGHT_STROKE, SECTION_CORNER_RADIUS } from '#core/constants'
-import type { SceneNode, SceneGraph, Fill } from '#core/scene-graph'
-import type { Color } from '#core/types'
-import { vectorNetworkToCenterlinePath } from '#core/vector'
+import { drawIndividualSideStrokes } from '#core/canvas/strokes/sides'
+import { nodeOrientationMatrix, projectedNode } from '#core/geometry'
+import { mapVisualBounds } from '#core/geometry/render-bounds'
+import { fontManager } from '#core/text/font/manager'
 
-import { nodeHasRadius } from './effects'
+import { needsIsolatedBlendLayer, setPaintBlendMode } from './blend'
+import { blurLayerBounds, blurredContent, layerBlurFilter, viewportLayerBounds } from './blur/layer'
+import { renderBooleanOperation } from './boolean'
+import { drawVectorMultiStyleFills, paintFills } from './fills'
+import { drawLayoutGrids } from './layout-grids'
+import { renderMaskedChildIds } from './masks'
 import type { SkiaRenderer, RenderOverlays } from './renderer'
+import { drawShapeThroughNodePicture } from './renderer/node-pictures'
+import { subtreeVisualBounds } from './renderer/visual-bounds'
+import { isolatesInnerShadows, renderLayerShadows } from './shadows'
+import {
+  configureStrokePaint,
+  drawDashedRRectWithSolidCorners,
+  drawRRectStrokeWithAlign,
+  drawStyledRRectStroke,
+  forVisibleStrokes
+} from './strokes'
+import {
+  drawFigmaDashes,
+  isPathTextWithStrokeGeometry,
+  paintNodeStrokes,
+  vectorStrokePaths
+} from './strokes/dispatch'
+import { drawReflowedPathTextSilhouettes, isReflowedPathText } from './text/derived'
+import { stickyPlaceholderNode } from './text/placeholder'
+import { drawTextEmoji, hasOverflowPathTextPaint, renderText } from './text/render'
 
 function drawVisibleFills(
   r: SkiaRenderer,
@@ -14,84 +44,199 @@ function drawVisibleFills(
   graph: SceneGraph,
   draw: (fill: Fill) => void
 ): void {
-  for (let fi = 0; fi < node.fills.length; fi++) {
-    const fill = node.fills[fi]
-    if (!fill.visible) continue
-    if (!r.applyFill(fill, node, graph, fi)) continue
-    r.fillPaint.setAlphaf(fill.opacity)
-    draw(fill)
-    r.fillPaint.setShader(null)
-  }
+  paintFills(r, node.fills, node, graph, draw)
 }
 
-function isCulled(r: SkiaRenderer, node: SceneNode, absX: number, absY: number): boolean {
+function hasNodeTransform(node: SceneNode): boolean {
+  return node.rotation !== 0 || node.flipX || node.flipY
+}
+
+/**
+ * The frame a node's children are placed in, composed on the way down: null while every ancestor
+ * is an unrotated, unflipped translation, which `absX`/`absY` carry more cheaply; from the first
+ * transformed layer on, its world matrix, so no node below it walks to the root to find its own.
+ */
+function childFrame(
+  frame: Mat3 | null,
+  node: SceneNode,
+  parentAbsX: number,
+  parentAbsY: number,
+  preview?: RenderOverlays['rotationPreview']
+): Mat3 | null {
+  const projected = projectedNode(node, preview)
+  if (frame) return Matrix.multiply(frame, getNodeLocalMatrix(projected))
+  if (!hasNodeTransform(projected)) return null
+  return Matrix.multiply(Matrix.translated(parentAbsX, parentAbsY), getNodeLocalMatrix(projected))
+}
+
+/** The node's world matrix from its frame, or from its absolute position when it has none. */
+function worldMatrixIn(
+  frame: Mat3 | null,
+  node: SceneNode,
+  parentAbsX: number,
+  parentAbsY: number,
+  preview?: RenderOverlays['rotationPreview']
+): Mat3 {
+  return (
+    childFrame(frame, node, parentAbsX, parentAbsY, preview) ??
+    Matrix.translated(parentAbsX + node.x, parentAbsY + node.y)
+  )
+}
+
+function isCulled(
+  r: SkiaRenderer,
+  node: SceneNode,
+  absX: number,
+  absY: number,
+  frame: Mat3 | null,
+  preview?: RenderOverlays['rotationPreview']
+): boolean {
   const canCull =
     node.childIds.length === 0 ||
     ((node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE') &&
       node.clipsContent)
-  if (!canCull) return false
+  if (!canCull || hasOverflowPathTextPaint(node)) return false
+  // Text lines past a fixed-size box still draw, as in Figma.
+  const linesOverflow = textLinesOverflow(node)
 
   const vp = r.worldViewport
   const bw = node.width
-  const bh = node.height
-  if (node.rotation !== 0) {
-    const diag = Math.sqrt(bw * bw + bh * bh)
-    const cx = absX + bw / 2
-    const cy = absY + bh / 2
+  const bh = node.height + linesOverflow
+  if (frame || projectedNode(node, preview).rotation !== 0) {
+    const bounds = mapVisualBounds(
+      worldMatrixIn(frame, node, absX - node.x, absY - node.y, preview),
+      {
+        minX: 0,
+        minY: 0,
+        maxX: bw,
+        maxY: bh
+      }
+    )
     return (
-      cx - diag / 2 > vp.x + vp.w ||
-      cy - diag / 2 > vp.y + vp.h ||
-      cx + diag / 2 < vp.x ||
-      cy + diag / 2 < vp.y
+      bounds.minX > vp.x + vp.w ||
+      bounds.minY > vp.y + vp.h ||
+      bounds.maxX < vp.x ||
+      bounds.maxY < vp.y
     )
   }
   return absX > vp.x + vp.w || absY > vp.y + vp.h || absX + bw < vp.x || absY + bh < vp.y
 }
 
-function applyNodeTransforms(
-  _r: SkiaRenderer,
-  canvas: Canvas,
-  node: SceneNode,
-  nodeId: string,
-  overlays: RenderOverlays
-): void {
-  const rotation =
-    overlays.rotationPreview?.nodeId === nodeId ? overlays.rotationPreview.angle : node.rotation
-  if (rotation !== 0) {
-    canvas.rotate(rotation, node.width / 2, node.height / 2)
-  }
-
-  if (node.flipX || node.flipY) {
-    canvas.translate(node.flipX ? node.width : 0, node.flipY ? node.height : 0)
-    canvas.scale(node.flipX ? -1 : 1, node.flipY ? -1 : 1)
-  }
+function applyNodeTransforms(canvas: Canvas, node: SceneNode, overlays: RenderOverlays): void {
+  // Most layers are neither rotated nor flipped: their orientation is the identity, not a call.
+  if (!hasNodeTransform(projectedNode(node, overlays.rotationPreview))) return
+  canvas.concat(nodeOrientationMatrix(node, overlays.rotationPreview))
 }
-
 function renderNodeContent(
   r: SkiaRenderer,
   canvas: Canvas,
   graph: SceneGraph,
   node: SceneNode,
-  nodeId: string,
   overlays: RenderOverlays
 ): void {
   if (node.type === 'SECTION') {
     r.renderSection(canvas, node, graph)
-  } else if (node.type === 'COMPONENT_SET') {
+  } else if (node.type === 'COMPONENT_SET' && !overlays.playing) {
+    // A previewing canvas draws a set as a plain frame.
     r.renderComponentSet(canvas, node, graph)
+  } else if (node.type === 'BOOLEAN_OPERATION') {
+    renderBooleanOperation(r, canvas, node, graph)
   } else {
     r.renderShape(canvas, node, graph)
   }
+}
 
-  if (overlays.editingTextId === nodeId && overlays.textEditor?.state?.paragraph) {
-    r.drawTextEditOverlay(canvas, node, overlays.textEditor)
+function renderMaskNodeContent(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  node: SceneNode,
+  overlays: RenderOverlays,
+  absX: number,
+  absY: number,
+  frame: Mat3 | null
+): void {
+  // A mask whose fonts are still prepared masks nothing in yet, so what it masks stays hidden too.
+  if (fontManager.isNodeBlocked(graph, node.id)) return
+  canvas.save()
+  canvas.translate(node.x, node.y)
+  // As in Figma, a mask's opacity and layer blur reach what it masks; its blend mode does not.
+  const blur = node.effects.find(
+    (effect) =>
+      effect.visible && (effect.type === 'LAYER_BLUR' || effect.type === 'FOREGROUND_BLUR')
+  )
+  const layered = node.opacity < 1 || blur !== undefined
+  if (layered) {
+    const blurRadius = drawnBlurRadius(blur ? widestBlurRadius(blur) : 0)
+    r.opacityPaint.setAlphaf(node.opacity)
+    r.opacityPaint.setBlendMode(r.ck.BlendMode.SrcOver)
+    const content = blurredContent(graph, node, overlays)
+    r.opacityPaint.setImageFilter(blur ? layerBlurFilter(r, node, blur, overlays, content) : null)
+    canvas.saveLayer(
+      r.opacityPaint,
+      blurLayerBounds(
+        r,
+        worldMatrixIn(frame, node, absX, absY, overlays.rotationPreview),
+        blurRadius,
+        content
+      )
+    )
+    r.opacityPaint.setImageFilter(null)
   }
+  applyNodeTransforms(canvas, node, overlays)
+  renderNodeContent(r, canvas, graph, node.maskType === 'VECTOR' ? opaqueFills(node) : node, {})
+  // A group or frame used as a mask masks with what its layers draw, as in Figma.
+  renderChildren(
+    r,
+    canvas,
+    graph,
+    node,
+    overlays,
+    absX + node.x,
+    absY + node.y,
+    childFrame(frame, node, absX, absY, overlays.rotationPreview)
+  )
+  if (layered) canvas.restore()
+  canvas.restore()
+}
 
-  if (overlays.dropTargetId === nodeId) {
-    r.auxStroke.setStrokeWidth(DROP_HIGHLIGHT_STROKE / r.zoom)
-    r.auxStroke.setColor(r.selColor(DROP_HIGHLIGHT_ALPHA))
-    canvas.drawRect(r.ck.LTRBRect(0, 0, node.width, node.height), r.auxStroke)
+/** An outline mask masks with its shape alone, so Figma ignores how opaque its fills are. */
+function opaqueFills(node: SceneNode): SceneNode {
+  return {
+    ...node,
+    fills: node.fills.map((fill) => ({ ...fill, opacity: 1, color: { ...fill.color, a: 1 } }))
   }
+}
+
+function renderChildIds(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  childIds: string[],
+  overlays: RenderOverlays,
+  absX: number,
+  absY: number,
+  frame: Mat3 | null
+): void {
+  renderMaskedChildIds(
+    r,
+    canvas,
+    childIds,
+    (childId) => {
+      const child = graph.getNode(childId)
+      return child?.visible && child.isMask ? child.maskType : null
+    },
+    (childId) => r.renderNode(canvas, graph, childId, overlays, absX, absY, frame),
+    (childId) => {
+      const child = graph.getNode(childId)
+      if (child) renderMaskNodeContent(r, canvas, graph, child, overlays, absX, absY, frame)
+    },
+    (childId) => {
+      const child = graph.getNode(childId)
+      if (!child) return null
+      return { x: child.x, y: child.y, width: child.width, height: child.height }
+    }
+  )
 }
 
 function renderChildren(
@@ -99,28 +244,85 @@ function renderChildren(
   canvas: Canvas,
   graph: SceneGraph,
   node: SceneNode,
-  overlays: RenderOverlays
+  overlays: RenderOverlays,
+  absX: number,
+  absY: number,
+  frame: Mat3 | null
 ): void {
+  if (node.type === 'BOOLEAN_OPERATION') return
   const isClippableContainer =
     node.type === 'FRAME' || node.type === 'COMPONENT' || node.type === 'INSTANCE'
   if (isClippableContainer && node.clipsContent && node.childIds.length > 0) {
     canvas.save()
-    if (nodeHasRadius(node)) {
-      canvas.clipRRect(r.makeRRect(node), r.ck.ClipOp.Intersect, true)
-    } else {
-      canvas.clipRect(r.ck.LTRBRect(0, 0, node.width, node.height), r.ck.ClipOp.Intersect, true)
-    }
-    for (const childId of node.childIds) {
-      r.renderNode(canvas, graph, childId, overlays)
-    }
+    r.clipNodeShape(canvas, node)
+    renderChildIds(r, canvas, graph, node.childIds, overlays, absX, absY, frame)
     canvas.restore()
   } else {
-    for (const childId of node.childIds) {
-      r.renderNode(canvas, graph, childId, overlays)
-    }
+    renderChildIds(r, canvas, graph, node.childIds, overlays, absX, absY, frame)
   }
 }
+export function renderNodeSelf(
+  r: SkiaRenderer,
+  canvas: Canvas,
+  graph: SceneGraph,
+  nodeId: string,
+  overlays: RenderOverlays = {}
+): void {
+  const node = graph.getNode(nodeId)
+  if (
+    !node ||
+    node.internalOnly ||
+    !node.visible ||
+    node.isMask ||
+    fontManager.isNodeBlocked(graph, nodeId)
+  ) {
+    return
+  }
+  canvas.save()
+  canvas.translate(node.x, node.y)
+  applyNodeTransforms(canvas, node, overlays)
+  renderNodeContent(r, canvas, graph, node, overlays)
+  drawLayoutGrids(r, canvas, node)
+  canvas.restore()
+}
 
+/**
+ * The layer opens after the node's x/y translation and before its rotation and flips, so the
+ * subtree is measured through its orientation matrix.
+ */
+function nodeIsolationLayerBounds(
+  r: SkiaRenderer,
+  graph: SceneGraph,
+  node: SceneNode,
+  world: Mat3,
+  preview?: RenderOverlays['rotationPreview']
+): Float32Array {
+  const viewportBounds = viewportLayerBounds(r, world, 0)
+  if (viewportBounds) return viewportBounds
+  const bounds = subtreeVisualBounds(graph, node, nodeOrientationMatrix(node, preview), preview)
+  return r.ck.LTRBRect(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY)
+}
+
+/**
+ * Whether the canvas draws a node itself: not hidden, a mask, blocked on fonts, drawn live by
+ * node-edit mode, or left to a live island while the canvas previews.
+ */
+function drawsNode(graph: SceneGraph, node: SceneNode, overlays: RenderOverlays): boolean {
+  if (
+    node.internalOnly ||
+    !node.visible ||
+    node.isMask ||
+    fontManager.isNodeBlocked(graph, node.id)
+  )
+    return false
+  return overlays.nodeEditState?.nodeId !== node.id && !overlays.playIslands?.has(node.id)
+}
+
+/**
+ * Draws a layer and its subtree. `frame` is the world matrix of the nearest transformed ancestor,
+ * or null when `parentAbsX`/`parentAbsY` place the layer; a chunk recorded in world space passes
+ * its parent's transform.
+ */
 export function renderNode(
   r: SkiaRenderer,
   canvas: Canvas,
@@ -128,30 +330,33 @@ export function renderNode(
   nodeId: string,
   overlays: RenderOverlays,
   parentAbsX = 0,
-  parentAbsY = 0
+  parentAbsY = 0,
+  frame: Mat3 | null = null
 ): void {
-  const node = graph.getNode(nodeId)
-  if (!node || !node.visible) return
+  const found = graph.getNode(nodeId)
+  if (!found || !drawsNode(graph, found, overlays)) return
+  const node = stickyPlaceholderNode(graph, found, r.stickyPlaceholder) ?? found
 
-  // Hide the node being edited in node-edit mode (overlay draws it live)
-  if (overlays.nodeEditState?.nodeId === nodeId) return
-
-  r._nodeCount++
+  r.drawCounts.nodes++
 
   const absX = parentAbsX + node.x
   const absY = parentAbsY + node.y
 
-  if (isCulled(r, node, absX, absY)) {
-    r._culledCount++
+  if (isCulled(r, node, absX, absY, frame, overlays.rotationPreview)) {
+    r.drawCounts.culled++
     return
   }
 
   canvas.save()
   canvas.translate(node.x, node.y)
 
-  if (node.opacity < 1) {
+  const world = () => worldMatrixIn(frame, node, parentAbsX, parentAbsY, overlays.rotationPreview)
+  const needsNodeLayer = node.opacity < 1 || needsIsolatedBlendLayer(node.blendMode)
+  if (needsNodeLayer) {
+    const layerBounds = nodeIsolationLayerBounds(r, graph, node, world(), overlays.rotationPreview)
     r.opacityPaint.setAlphaf(node.opacity)
-    canvas.saveLayer(r.opacityPaint)
+    setPaintBlendMode(r, r.opacityPaint, node.blendMode)
+    canvas.saveLayer(r.opacityPaint, layerBounds)
   }
 
   const layerBlur = node.effects.find(
@@ -163,13 +368,27 @@ export function renderNode(
     r.effectLayerPaint.setColorFilter(null)
     r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcOver)
 
-    r.effectLayerPaint.setImageFilter(r.getCachedBlur(layerBlur.radius / 2))
-    canvas.saveLayer(r.effectLayerPaint)
+    const content = blurredContent(graph, node, overlays)
+    r.effectLayerPaint.setImageFilter(layerBlurFilter(r, node, layerBlur, overlays, content))
+    const blurRadius = drawnBlurRadius(widestBlurRadius(layerBlur))
+    canvas.saveLayer(r.effectLayerPaint, blurLayerBounds(r, world(), blurRadius, content))
   }
 
-  applyNodeTransforms(r, canvas, node, nodeId, overlays)
-  renderNodeContent(r, canvas, graph, node, nodeId, overlays)
-  renderChildren(r, canvas, graph, node, overlays)
+  applyNodeTransforms(canvas, node, overlays)
+  renderLayerShadows(r, canvas, graph, node, 'behind')
+  renderNodeContent(r, canvas, graph, node, overlays)
+  drawLayoutGrids(r, canvas, node)
+  renderChildren(
+    r,
+    canvas,
+    graph,
+    node,
+    overlays,
+    absX,
+    absY,
+    childFrame(frame, node, parentAbsX, parentAbsY, overlays.rotationPreview)
+  )
+  renderLayerShadows(r, canvas, graph, node, 'front')
 
   if (layerBlur) {
     canvas.restore()
@@ -178,8 +397,10 @@ export function renderNode(
     r.effectLayerPaint.setColorFilter(null)
     r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcOver)
   }
-  if (node.opacity < 1) {
+  if (needsNodeLayer) {
     canvas.restore()
+    r.opacityPaint.setAlphaf(1)
+    r.opacityPaint.setBlendMode(r.ck.BlendMode.SrcOver)
   }
   canvas.restore()
 }
@@ -189,17 +410,16 @@ function makeNodeRRect(r: SkiaRenderer, node: SceneNode, radius: number): Float3
   return r.ck.RRectXY(rect, radius, radius)
 }
 
-function forVisibleStrokes(
+/** Fill a section's or set's rounded bounds and return them, for its strokes to follow. */
+function fillRoundedBounds(
   r: SkiaRenderer,
+  canvas: Canvas,
   node: SceneNode,
-  graph: SceneGraph,
-  draw: (stroke: SceneNode['strokes'][number], color: Color) => void
-): void {
-  for (let index = 0; index < node.strokes.length; index++) {
-    const stroke = node.strokes[index]
-    if (!stroke.visible) continue
-    draw(stroke, r.resolveStrokeColor(stroke, index, node, graph))
-  }
+  graph: SceneGraph
+): Float32Array {
+  const rrect = makeNodeRRect(r, node, node.cornerRadius)
+  drawVisibleFills(r, node, graph, () => canvas.drawRRect(rrect, r.fillPaint))
+  return rrect
 }
 
 export function renderSection(
@@ -208,17 +428,14 @@ export function renderSection(
   node: SceneNode,
   graph: SceneGraph
 ): void {
-  const rrect = makeNodeRRect(r, node, SECTION_CORNER_RADIUS)
-
-  drawVisibleFills(r, node, graph, () => canvas.drawRRect(rrect, r.fillPaint))
-
+  const rrect = fillRoundedBounds(r, canvas, node, graph)
   forVisibleStrokes(r, node, graph, (stroke, color) => {
-    r.strokePaint.setColor(r.ck.Color4f(color.r, color.g, color.b, color.a))
-    r.strokePaint.setStrokeWidth(stroke.weight)
-    r.strokePaint.setAlphaf(stroke.opacity)
+    configureStrokePaint(r, node, stroke, color)
 
-    if (node.independentStrokeWeights) r.drawIndividualSideStrokes(canvas, node, stroke.align)
-    else r.drawRRectStrokeWithAlign(canvas, rrect, node, stroke)
+    if (node.independentStrokeWeights) drawIndividualSideStrokes(r, canvas, node, stroke)
+    else if (!drawFigmaDashes(r, canvas, node, stroke)) {
+      drawRRectStrokeWithAlign(r, canvas, rrect, node, stroke)
+    }
   })
 }
 
@@ -228,17 +445,37 @@ export function renderComponentSet(
   node: SceneNode,
   graph: SceneGraph
 ): void {
-  const rrect = makeNodeRRect(r, node, 5)
+  const rrect = fillRoundedBounds(r, canvas, node, graph)
+  // A set without a stroke gets its dashed editing border from the overlay pass.
+  forVisibleStrokes(r, node, graph, (stroke, color) => {
+    configureStrokePaint(r, node, stroke, color)
+    if (drawFigmaDashes(r, canvas, node, stroke)) return
+    const dashPhase = stroke.dashPattern?.[1] ?? 0
+    if (stroke.dashPattern && stroke.dashPattern.length > 0) {
+      drawDashedRRectWithSolidCorners(
+        r,
+        canvas,
+        node,
+        stroke,
+        color,
+        // Skia fits a rounded rect's radii to its bounds; the dashed outline must match the fill.
+        Math.min(node.cornerRadius, node.width / 2, node.height / 2),
+        dashPhase
+      )
+    } else {
+      drawStyledRRectStroke(r, canvas, rrect, node, stroke, color, dashPhase)
+    }
+  })
+}
 
-  drawVisibleFills(r, node, graph, () => canvas.drawRRect(rrect, r.fillPaint))
-
-  r.auxStroke.setStrokeWidth(r.COMPONENT_SET_BORDER_WIDTH / r.zoom)
-  r.auxStroke.setColor(r.compColor())
-  r.auxStroke.setPathEffect(
-    r.ck.PathEffect.MakeDash([r.COMPONENT_SET_DASH / r.zoom, r.COMPONENT_SET_DASH_GAP / r.zoom], 0)
+/** The effects `renderShape` draws: a container's shadows are drawn around its children instead. */
+function shapeEffects(node: SceneNode): SceneNode['effects'] {
+  const ownShadows = !isLayerContainer(node)
+  return node.effects.filter(
+    (effect) =>
+      effect.visible &&
+      (ownShadows || (effect.type !== 'DROP_SHADOW' && effect.type !== 'INNER_SHADOW'))
   )
-  canvas.drawRRect(rrect, r.auxStroke)
-  r.auxStroke.setPathEffect(null)
 }
 
 export function renderShape(
@@ -247,325 +484,64 @@ export function renderShape(
   node: SceneNode,
   graph: SceneGraph
 ): void {
-  const hasEffects = node.effects.length > 0 && node.effects.some((e) => e.visible)
-
-  if (hasEffects) {
-    const cached = r.nodePictureCache.get(node.id)
-    if (cached) {
-      canvas.drawPicture(cached)
-      return
-    }
-
-    const margin = r.effectOverflow(node)
-    const bounds = r.ck.LTRBRect(-margin, -margin, node.width + margin, node.height + margin)
-    const recorder = new r.ck.PictureRecorder()
-    const recCanvas = recorder.beginRecording(bounds)
-    r.renderShapeUncached(recCanvas, node, graph)
-    const picture = recorder.finishRecordingAsPicture()
-    recorder.delete()
-    r.nodePictureCache.set(node.id, picture)
-    canvas.drawPicture(picture)
-  } else {
+  const effects = shapeEffects(node)
+  if (r.viewportImageRendering || effects.length === 0) {
     r.renderShapeUncached(canvas, node, graph)
-  }
-}
-
-/**
- * When a container has no visible fills, Figma renders drop shadows
- * using the shape of its children rather than its own rectangle.
- * Returns the child to use for shadow shape, or null to use the node itself.
- */
-function getShadowShapeChild(node: SceneNode, graph: SceneGraph): SceneNode | null {
-  if (node.fills.some((f) => f.visible)) return null
-  if (node.childIds.length === 0) return null
-  const child = graph.getNode(node.childIds[0])
-  if (!child?.visible) return null
-  return child
-}
-
-function getCapEntity(r: SkiaRenderer, cap: string | undefined): EmbindEnumEntity {
-  switch (cap) {
-    case 'ROUND':
-      return r.ck.StrokeCap.Round
-    case 'SQUARE':
-      return r.ck.StrokeCap.Square
-    default:
-      return r.ck.StrokeCap.Butt
-  }
-}
-
-function getJoinEntity(r: SkiaRenderer, join: string | undefined): EmbindEnumEntity {
-  switch (join) {
-    case 'ROUND':
-      return r.ck.StrokeJoin.Round
-    case 'BEVEL':
-      return r.ck.StrokeJoin.Bevel
-    default:
-      return r.ck.StrokeJoin.Miter
-  }
-}
-
-function drawVectorStrokeGeometry(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  sg: Path[],
-  sc: Color,
-  opacity: number
-): void {
-  r.fillPaint.setColor(r.ck.Color4f(sc.r, sc.g, sc.b, sc.a))
-  r.fillPaint.setAlphaf(opacity)
-  r.fillPaint.setShader(null)
-  for (const p of sg) canvas.drawPath(p, r.fillPaint)
-}
-
-function vectorStrokePaths(r: SkiaRenderer, node: SceneNode): Path[] | null {
-  if (!node.vectorNetwork) return null
-
-  const paths: Path[] = []
-  for (const segment of node.vectorNetwork.segments) {
-    const start = node.vectorNetwork.vertices[segment.start]
-    const end = node.vectorNetwork.vertices[segment.end]
-
-    const path = new r.ck.Path()
-    path.moveTo(start.x, start.y)
-    const isStraight =
-      Math.abs(segment.tangentStart.x) < 0.001 &&
-      Math.abs(segment.tangentStart.y) < 0.001 &&
-      Math.abs(segment.tangentEnd.x) < 0.001 &&
-      Math.abs(segment.tangentEnd.y) < 0.001
-    if (isStraight) {
-      path.lineTo(end.x, end.y)
-    } else {
-      path.cubicTo(
-        start.x + segment.tangentStart.x,
-        start.y + segment.tangentStart.y,
-        end.x + segment.tangentEnd.x,
-        end.y + segment.tangentEnd.y,
-        end.x,
-        end.y
-      )
-    }
-    paths.push(path)
-  }
-
-  return paths.length > 0 ? paths : null
-}
-
-function drawVectorPathStrokes(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  vectorPaths: Path[],
-  stroke: SceneNode['strokes'][0],
-  sc: Color
-): void {
-  const dash = stroke.dashPattern
-  if (dash && dash.length > 0) {
-    r.strokePaint.setColor(r.ck.Color4f(sc.r, sc.g, sc.b, sc.a))
-    r.strokePaint.setAlphaf(stroke.opacity)
-    r.strokePaint.setStrokeWidth(stroke.weight)
-    r.strokePaint.setStrokeCap(getCapEntity(r, stroke.cap ?? 'NONE'))
-    r.strokePaint.setStrokeJoin(getJoinEntity(r, stroke.join ?? 'MITER'))
-    r.strokePaint.setShader(null)
-    const effect = r.ck.PathEffect.MakeDash(dash, 0)
-    r.strokePaint.setPathEffect(effect)
-    for (const vp of vectorPaths) canvas.drawPath(vp, r.strokePaint)
-    r.strokePaint.setPathEffect(null)
-    effect.delete()
-    return
-  }
-  const strokeOpts = {
-    width: stroke.weight,
-    miter_limit: 4,
-    cap: getCapEntity(r, stroke.cap ?? 'NONE'),
-    join: getJoinEntity(r, stroke.join ?? 'MITER')
-  }
-  r.fillPaint.setColor(r.ck.Color4f(sc.r, sc.g, sc.b, sc.a))
-  r.fillPaint.setAlphaf(stroke.opacity)
-  r.fillPaint.setShader(null)
-  for (const vp of vectorPaths) {
-    const outline = vp.copy().stroke(strokeOpts)
-    if (outline) {
-      canvas.drawPath(outline, r.fillPaint)
-      outline.delete()
-    }
-  }
-}
-
-function drawRegularStroke(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  node: SceneNode,
-  rect: Float32Array,
-  hasRadius: boolean,
-  stroke: SceneNode['strokes'][0],
-  sc: Color
-): void {
-  r.strokePaint.setColor(r.ck.Color4f(sc.r, sc.g, sc.b, sc.a))
-  r.strokePaint.setStrokeWidth(stroke.weight)
-  r.strokePaint.setAlphaf(stroke.opacity)
-
-  if (stroke.cap) {
-    r.strokePaint.setStrokeCap(getCapEntity(r, stroke.cap))
-  }
-  if (stroke.join) {
-    r.strokePaint.setStrokeJoin(getJoinEntity(r, stroke.join))
-  }
-  if (stroke.dashPattern && stroke.dashPattern.length > 0) {
-    r.strokePaint.setPathEffect(r.ck.PathEffect.MakeDash(stroke.dashPattern, 0))
-  } else {
-    r.strokePaint.setPathEffect(null)
-  }
-
-  if (node.independentStrokeWeights && r.isRectangularType(node.type)) {
-    r.drawIndividualSideStrokes(canvas, node, stroke.align)
-  } else {
-    r.drawStrokeWithAlign(canvas, node, rect, hasRadius, stroke.align)
-  }
-}
-
-function drawNodeStroke(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  node: SceneNode,
-  rect: Float32Array,
-  hasRadius: boolean,
-  stroke: SceneNode['strokes'][0],
-  sc: Color,
-  sg: Path[] | null,
-  vectorPaths: Path[] | null,
-  vectorStroke: Path[] | null
-): void {
-  if (vectorStroke && stroke.align === 'CENTER' && node.cornerRadius === 0) {
-    drawVectorPathStrokes(r, canvas, vectorStroke, stroke, sc)
-    return
-  }
-  if (!sg) {
-    if (vectorPaths) drawVectorPathStrokes(r, canvas, vectorPaths, stroke, sc)
-    else drawRegularStroke(r, canvas, node, rect, hasRadius, stroke, sc)
-    return
-  }
-  if (stroke.align !== 'INSIDE') {
-    drawVectorStrokeGeometry(r, canvas, sg, sc, stroke.opacity)
     return
   }
 
-  const clipPaths = node.type === 'VECTOR' ? r.getFillGeometry(node) : null
-  if (node.type === 'VECTOR' && !clipPaths) {
-    drawVectorStrokeGeometry(r, canvas, sg, sc, stroke.opacity)
-    return
-  }
-
-  canvas.save()
-  if (clipPaths) {
-    for (const path of clipPaths) canvas.clipPath(path, r.ck.ClipOp.Intersect, true)
-  } else {
-    r.clipNodeShape(canvas, node, rect, hasRadius)
-  }
-  drawVectorStrokeGeometry(r, canvas, sg, sc, stroke.opacity)
-  canvas.restore()
+  drawShapeThroughNodePicture(r, canvas, node, (target) =>
+    r.renderShapeUncached(target, node, graph)
+  )
 }
 
+/** Draws a shape with its own effects: Figma puts inner shadows over fills and under strokes. */
 export function renderShapeUncached(
   r: SkiaRenderer,
   canvas: Canvas,
   node: SceneNode,
   graph: SceneGraph
 ): void {
-  const rect = r.ck.LTRBRect(0, 0, node.width, node.height)
-  const hasRadius = nodeHasRadius(node)
-
-  const shadowChild = getShadowShapeChild(node, graph)
-  r.renderEffects(canvas, node, rect, hasRadius, 'behind', shadowChild)
-
-  drawVisibleFills(r, node, graph, (fill) => r.drawNodeFill(canvas, node, rect, hasRadius, fill))
-
-  const sg = node.strokeGeometry.length > 0 ? r.getStrokeGeometry(node) : null
-  const vectorPaths = node.type === 'VECTOR' ? r.getVectorPaths(node) : null
-  const vectorStroke = node.type === 'VECTOR' ? vectorStrokePaths(r, node) : null
-  forVisibleStrokes(r, node, graph, (stroke, color) => {
-    if (
-      stroke.dashPattern &&
-      stroke.dashPattern.length > 0 &&
-      node.type === 'VECTOR' &&
-      node.vectorNetwork
-    ) {
-      const centerline = vectorNetworkToCenterlinePath(r.ck, node.vectorNetwork)
-      drawVectorPathStrokes(r, canvas, [centerline], stroke, color)
-      centerline.delete()
-      return
-    }
-    drawNodeStroke(r, canvas, node, rect, hasRadius, stroke, color, sg, vectorPaths, vectorStroke)
-  })
-  if (vectorStroke) {
-    for (const path of vectorStroke) path.delete()
-  }
-
-  r.renderEffects(canvas, node, rect, hasRadius, 'front', shadowChild)
+  r.renderEffects(canvas, node, graph, 'behind')
+  paintShapeContent(r, canvas, node, graph, () => r.renderEffects(canvas, node, graph, 'inner'))
+  r.renderEffects(canvas, node, graph, 'front')
 }
 
-function isGradientFill(fill?: Fill): boolean {
-  return fill?.type.startsWith('GRADIENT') === true
-}
-
-function drawGradientText(
+/** Draws a shape's fills and strokes without its effects; `afterFills` runs between the two. */
+export function paintShapeContent(
   r: SkiaRenderer,
   canvas: Canvas,
   node: SceneNode,
-  paragraphY: number
-): boolean {
-  if (!r.fontsLoaded || !r.fontProvider) return false
+  graph: SceneGraph,
+  afterFills?: () => void
+): void {
+  const sg = node.strokeGeometry.length > 0 ? r.getStrokeGeometry(node) : null
+  const vectorPaths = node.type === 'VECTOR' ? r.getVectorPaths(node) : null
+  const vectorStroke = node.type === 'VECTOR' ? vectorStrokePaths(r, node) : null
+  const pathTextStrokeFirst = isPathTextWithStrokeGeometry(node)
+  const reflowedPathText = isReflowedPathText(node)
 
-  const paragraph = r.buildParagraph(node, r.ck.Color4f(0, 0, 0, 1))
-  r.effectLayerPaint.setImageFilter(null)
-  r.effectLayerPaint.setColorFilter(null)
-  r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcOver)
-  canvas.saveLayer(r.effectLayerPaint)
-  canvas.drawParagraph(paragraph, 0, paragraphY)
-  paragraph.delete()
+  if (pathTextStrokeFirst) {
+    paintNodeStrokes(r, canvas, node, graph, sg, vectorPaths, vectorStroke)
+  }
+  if (reflowedPathText) {
+    forVisibleStrokes(r, node, graph, (stroke, color) =>
+      drawReflowedPathTextSilhouettes(r, canvas, node, stroke, color)
+    )
+  }
 
-  r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcIn)
-  canvas.saveLayer(r.effectLayerPaint)
-  canvas.drawRect(r.ck.LTRBRect(0, 0, node.width, node.height), r.fillPaint)
-  canvas.restore()
-  canvas.restore()
-  r.effectLayerPaint.setImageFilter(null)
-  r.effectLayerPaint.setColorFilter(null)
-  r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcOver)
-  return true
+  const isolated = afterFills !== undefined && isolatesInnerShadows(node)
+  if (isolated) canvas.saveLayer()
+  if (!drawVectorMultiStyleFills(r, canvas, node, graph)) {
+    drawVisibleFills(r, node, graph, (fill) => r.drawNodeFill(canvas, node, fill))
+  }
+  if (node.type === 'TEXT') drawTextEmoji(r, canvas, node)
+  afterFills?.()
+  if (isolated) canvas.restore()
+
+  if (!pathTextStrokeFirst && !reflowedPathText) {
+    paintNodeStrokes(r, canvas, node, graph, sg, vectorPaths, vectorStroke)
+  }
 }
 
-export function renderText(r: SkiaRenderer, canvas: Canvas, node: SceneNode, fill?: Fill): void {
-  const text = node.text
-  if (!text) return
-
-  canvas.save()
-  const shouldClipText = node.textAutoResize === 'NONE' || node.textAutoResize === 'TRUNCATE'
-  if (shouldClipText) {
-    canvas.clipRect(r.ck.LTRBRect(0, 0, node.width, node.height), r.ck.ClipOp.Intersect, false)
-  }
-
-  const paragraphY = -1
-  if (isGradientFill(fill) && drawGradientText(r, canvas, node, paragraphY)) {
-    canvas.restore()
-    return
-  }
-
-  if (node.textPicture) {
-    const pic = r.ck.MakePicture(node.textPicture)
-    if (pic) {
-      canvas.drawPicture(pic)
-      pic.delete()
-      canvas.restore()
-      return
-    }
-  }
-  if (r.fontsLoaded && r.fontProvider) {
-    const paragraph = r.buildParagraph(node, r.fillPaint.getColor())
-    canvas.drawParagraph(paragraph, 0, paragraphY)
-    paragraph.delete()
-  } else if (r.textFont) {
-    canvas.drawText(text, 0, node.fontSize || r.DEFAULT_FONT_SIZE, r.fillPaint, r.textFont)
-  }
-
-  canvas.restore()
-}
+export { renderText }

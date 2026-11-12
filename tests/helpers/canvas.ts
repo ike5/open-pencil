@@ -1,16 +1,29 @@
 import type { Page, Locator } from '@playwright/test'
 
-export class CanvasHelper {
+import { OFFICIAL_CLOUD_URL } from '@/constants'
+
+import { CanvasPointer } from './canvas/pointer'
+
+/**
+ * The app asks the official Cloud server whether Cloud is open yet and carries on without an
+ * answer, so a request to it that fails is the network's, not the app's.
+ */
+const OFFICIAL_CLOUD_ORIGIN = new URL(OFFICIAL_CLOUD_URL).origin
+
+export class CanvasHelper extends CanvasPointer {
   readonly page: Page
   readonly canvas: Locator
   readonly errors: string[] = []
 
   constructor(page: Page) {
+    super()
     this.page = page
-    this.canvas = page.locator('[data-test-id="canvas-area"]')
+    this.canvas = page.getByTestId('canvas-area')
     page.on('pageerror', (err) => this.errors.push(err.message))
     page.on('console', (msg) => {
-      if (msg.type() === 'error') this.errors.push(msg.text())
+      if (msg.type() !== 'error') return
+      if (msg.location().url.startsWith(OFFICIAL_CLOUD_ORIGIN)) return
+      this.errors.push(msg.text())
     })
   }
 
@@ -28,45 +41,78 @@ export class CanvasHelper {
 
   async waitForInit() {
     await this.page
-      .locator('[data-test-id="canvas-element"][data-ready="1"]')
+      .getByTestId('canvas-element')
+      .and(this.page.locator('[data-ready="1"]'))
       .waitFor({ timeout: 30000 })
-    await this.page
-      .locator('[data-test-id="canvas-loading"]')
-      .waitFor({ state: 'hidden', timeout: 30000 })
+    await this.page.getByTestId('canvas-loading').waitFor({ state: 'hidden', timeout: 30000 })
     await this.page.locator('#loader').waitFor({ state: 'detached', timeout: 30000 })
+    await this.useLightPage()
+  }
+
+  /**
+   * Canvas specs draw on Figma's light page. Playwright runs the app in its dark theme, where a new
+   * document starts on Figma's dark page, so a fresh document (one empty page on that exact
+   * background) is switched back; any other document keeps its own. The switch is setup, not an
+   * edit, so the document stays saved and closing it asks nothing.
+   * `tests/e2e/pages/theme-background.spec.ts` covers the theme.
+   */
+  async useLightPage() {
+    await this.page.evaluate(() => {
+      const store = window.openPencil?.getStore?.()
+      if (!store) return
+      const pages = store.graph.getPages()
+      const [first] = pages
+      const darkDefault = 0x1e / 255
+      const { r, g, b } = store.state.pageColor
+      const fresh =
+        pages.length === 1 &&
+        first.childIds.length === 0 &&
+        [r, g, b].every((c) => c === darkDefault)
+      if (!fresh) return
+      store.setPageColor({ r: 0.96, g: 0.96, b: 0.96, a: 1 })
+      store.markDocumentSaved()
+    })
   }
 
   async clearCanvas() {
+    // Inside path editing, Select All and Backspace act on the path's points, not the layers.
+    await this.pressKey('Escape')
     await this.selectAll()
     await this.pressKey('Backspace')
     await this.waitForRender()
+  }
+
+  async pasteSVG(markup: string, x: number, y: number) {
+    return this.page.evaluate(
+      async ({ markup, x, y }) => {
+        const store = window.openPencil?.getStore?.()
+        if (!store) throw new Error('OpenPencil store not initialized')
+        const pasted = await store.pasteSVG(markup, x, y)
+        store.clearSelection()
+        store.requestRender()
+        return pasted
+      },
+      { markup, x, y }
+    )
   }
 
   async screenshotCanvas() {
     return this.canvas.screenshot()
   }
 
-  private async canvasBounds() {
-    const b = await this.canvas.boundingBox()
-    if (!b) throw new Error('Canvas has no bounding box — is it visible?')
-    return b
-  }
-
-  async click(canvasX: number, canvasY: number) {
-    const box = await this.canvasBounds()
-    await this.page.mouse.click(box.x + canvasX, box.y + canvasY)
-  }
-
-  async drag(fromX: number, fromY: number, toX: number, toY: number, steps = 10) {
-    const box = await this.canvasBounds()
-    await this.page.mouse.move(box.x + fromX, box.y + fromY)
-    await this.page.mouse.down()
-    await this.page.mouse.move(box.x + toX, box.y + toY, { steps })
-    await this.page.mouse.up()
-  }
-
-  async pressKey(key: string) {
-    await this.page.keyboard.press(key)
+  async screenshotCanvasRegion(width = 900, height = 700) {
+    const box = await this.canvas.boundingBox()
+    if (!box) throw new Error('Canvas has no bounding box — is it visible?')
+    const viewport = this.page.viewportSize()
+    if (!viewport) throw new Error('Viewport unavailable')
+    return this.page.screenshot({
+      clip: {
+        x: box.x,
+        y: box.y,
+        width: Math.min(width, viewport.width - box.x),
+        height: Math.min(height, viewport.height - box.y)
+      }
+    })
   }
 
   async drawRect(x: number, y: number, width: number, height: number) {
@@ -82,7 +128,7 @@ export class CanvasHelper {
   }
 
   async drawSection(x: number, y: number, width: number, height: number) {
-    await this.pressKey('s')
+    await this.pressKey('Shift+KeyS')
     await this.drag(x, y, x + width, y + height)
     await this.waitForRender()
   }
@@ -93,7 +139,7 @@ export class CanvasHelper {
     const keys: Record<string, string> = {
       select: 'v',
       frame: 'f',
-      section: 's',
+      section: 'Shift+KeyS',
       rectangle: 'r',
       ellipse: 'o',
       text: 't',
@@ -128,11 +174,7 @@ export class CanvasHelper {
   }
 
   async marquee(x1: number, y1: number, x2: number, y2: number, steps = 10) {
-    const box = await this.canvasBounds()
-    await this.page.mouse.move(box.x + x1, box.y + y1)
-    await this.page.mouse.down()
-    await this.page.mouse.move(box.x + x2, box.y + y2, { steps })
-    await this.page.mouse.up()
+    await this.drag(x1, y1, x2, y2, steps)
     await this.waitForRender()
   }
 
@@ -142,11 +184,11 @@ export class CanvasHelper {
     await this.waitForRender()
   }
 
-  /** Point `locator` at the outer ScrubInput container (`[data-test-id="scrub-input"]`), not the inner `<input>`. */
-  async dragScrubInput(locator: Locator, deltaX: number) {
+  /** Point `locator` at the outer NumberField container, not the inner `<input>`. */
+  async dragNumberField(locator: Locator, deltaX: number) {
     await locator.scrollIntoViewIfNeeded()
     const box = await locator.boundingBox()
-    if (!box) throw new Error('dragScrubInput: element has no bounding box')
+    if (!box) throw new Error('dragNumberField: element has no bounding box')
     const cx = box.x + box.width / 2
     const cy = box.y + box.height / 2
     await this.page.mouse.move(cx, cy)
@@ -157,24 +199,12 @@ export class CanvasHelper {
   }
 
   async altDrag(fromX: number, fromY: number, toX: number, toY: number) {
-    const box = await this.canvasBounds()
-    await this.page.keyboard.down('Alt')
-    await this.page.mouse.move(box.x + fromX, box.y + fromY)
-    await this.page.mouse.down()
-    await this.page.mouse.move(box.x + toX, box.y + toY, { steps: 10 })
-    await this.page.mouse.up()
-    await this.page.keyboard.up('Alt')
+    await this.dragWith('Alt', fromX, fromY, toX, toY)
     await this.waitForRender()
   }
 
   async shiftDrag(fromX: number, fromY: number, toX: number, toY: number) {
-    const box = await this.canvasBounds()
-    await this.page.keyboard.down('Shift')
-    await this.page.mouse.move(box.x + fromX, box.y + fromY)
-    await this.page.mouse.down()
-    await this.page.mouse.move(box.x + toX, box.y + toY, { steps: 10 })
-    await this.page.mouse.up()
-    await this.page.keyboard.up('Shift')
+    await this.dragWith('Shift', fromX, fromY, toX, toY)
     await this.waitForRender()
   }
 

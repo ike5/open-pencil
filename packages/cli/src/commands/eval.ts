@@ -1,10 +1,20 @@
 import { defineCommand } from 'citty'
 
-import { FigmaAPI } from '@open-pencil/core/figma-api'
+import { flushPendingLayout } from '@open-pencil/core/figma-api'
+import { compileScript } from '@open-pencil/core/tools'
 
-import { isAppMode, requireFile, rpc } from '#cli/app-client'
+import { isAppMode, requireFile, rpc } from '#cli/app/client'
+import { appTargetOptions, appTargetRPCArgs } from '#cli/app/target'
 import { printError } from '#cli/format'
-import { loadDocument } from '#cli/headless'
+import {
+  documentWriteOptions,
+  editDocument,
+  loadDocument,
+  measureDocumentText,
+  populateWholeDocument,
+  writeFigDocument
+} from '#cli/headless'
+import { createHeadlessFigma } from '#cli/tool-data'
 
 function printResult(value: unknown, json: boolean) {
   if (json || !process.stdout.isTTY) {
@@ -33,13 +43,8 @@ export default defineCommand({
     },
     code: { type: 'string', alias: 'c', description: 'JavaScript code to execute' },
     stdin: { type: 'boolean', description: 'Read code from stdin' },
-    write: { type: 'boolean', alias: 'w', description: 'Write changes back to the input file' },
-    output: {
-      type: 'string',
-      alias: 'o',
-      description: 'Write to a different file',
-      required: false
-    },
+    ...documentWriteOptions,
+    ...appTargetOptions,
     json: { type: 'boolean', description: 'Output as JSON' },
     quiet: { type: 'boolean', alias: 'q', description: 'Suppress output' }
   },
@@ -58,7 +63,7 @@ export default defineCommand({
     }
 
     if (isAppMode(args.file)) {
-      const result = await rpc('eval', { code })
+      const result = await rpc('eval', { code, ...appTargetRPCArgs(args) })
       if (!args.quiet && result !== undefined && result !== null) {
         printResult(result, !!args.json)
       }
@@ -67,21 +72,13 @@ export default defineCommand({
 
     const file = requireFile(args.file)
     const graph = await loadDocument(file)
-    const figma = new FigmaAPI(graph)
-
-    type AsyncFunctionConstructor = new (
-      ...args: string[]
-    ) => (...args: unknown[]) => Promise<unknown>
-    const AsyncFunction = Object.getPrototypeOf(async () => undefined)
-      .constructor as AsyncFunctionConstructor
-    const wrappedCode = code.trim().startsWith('return')
-      ? code
-      : `return (async () => { ${code} })()`
+    populateWholeDocument(graph)
+    await measureDocumentText(graph)
+    const figma = await createHeadlessFigma(graph)
 
     let result: unknown
     try {
-      const fn = new AsyncFunction('figma', wrappedCode)
-      result = await fn(figma)
+      result = await editDocument(graph, () => compileScript(code)(figma))
     } catch (err) {
       printError(err instanceof Error ? err.message : String(err))
       process.exit(1)
@@ -92,11 +89,10 @@ export default defineCommand({
     }
 
     if (args.write || args.output) {
-      const { BUILTIN_IO_FORMATS, IORegistry } = await import('@open-pencil/core/io')
-      const io = new IORegistry(BUILTIN_IO_FORMATS)
       const outPath = args.output ? args.output : file
-      const result = await io.writeDocument('fig', graph)
-      await Bun.write(outPath, result.data as Uint8Array)
+      // A script's edits that nothing read yet are laid out before saving, as Figma saves them.
+      flushPendingLayout(graph)
+      await writeFigDocument(graph, outPath)
       if (!args.quiet) {
         console.error(`Written to ${outPath}`)
       }

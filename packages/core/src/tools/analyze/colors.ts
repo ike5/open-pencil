@@ -1,13 +1,23 @@
-import { colorDistance, colorToHex } from '#core/color'
-import { defineTool } from '#core/tools/schema'
-import type { Color } from '#core/types'
+import { orderBy } from 'es-toolkit/array'
+import { sumBy } from 'es-toolkit/math'
+import * as v from 'valibot'
 
-interface ColorEntry {
+import { colorDistance, colorToHex } from '@open-pencil/scene-graph/color'
+import type { Color } from '@open-pencil/scene-graph/primitives'
+
+import { graphOf } from '#core/figma-api/graph'
+import { toolNumber, defineTool } from '#core/tools/schema'
+
+import { analysisLimitInputSchema } from './schema'
+
+export interface ColorUsageEntry {
   hex: string
   color: Color
   count: number
   variableName: string | null
 }
+
+type ColorEntry = ColorUsageEntry
 
 function trackColor(colorMap: Map<string, ColorEntry>, color: Color, variableName: string | null) {
   const hex = colorToHex(color)
@@ -26,19 +36,20 @@ export const analyzeColors = defineTool({
   name: 'analyze_colors',
   description:
     'Analyze color palette usage across the current page. Shows frequency, variable bindings, and optionally clusters similar colors.',
-  params: {
-    limit: { type: 'number', description: 'Max colors to return (default: 30)' },
-    show_similar: {
-      type: 'boolean',
-      description: 'Include similar-color clusters for potential merging'
-    },
-    threshold: {
-      type: 'number',
-      description: 'Distance threshold for clustering (0-50, default: 15)'
-    }
-  },
+  execution: { kind: 'sync', mutation: 'none' },
+  input: v.strictObject({
+    limit: analysisLimitInputSchema,
+    show_similar: v.optional(
+      v.pipe(v.boolean(), v.description('Include similar-color clusters for potential merging'))
+    ),
+    threshold: v.optional(
+      toolNumber(
+        v.pipe(v.number(), v.description('Distance threshold for clustering (0-50, default: 15)'))
+      )
+    )
+  }),
   execute: (figma, args) => {
-    const limit = args.limit ?? 30
+    const limit = args.limit
     const threshold = args.threshold ?? 15
     const page = figma.currentPage
     const colorMap = new Map<string, ColorEntry>()
@@ -46,28 +57,30 @@ export const analyzeColors = defineTool({
 
     page.findAll((node) => {
       totalNodes++
-      const raw = figma.graph.getNode(node.id)
+      const raw = graphOf(figma).getNode(node.id)
       if (!raw) return false
 
       const boundVars = raw.boundVariables
-      for (const fill of raw.fills) {
+      for (let i = 0; i < raw.fills.length; i++) {
+        const fill = raw.fills[i]
         if (fill.type === 'SOLID' && fill.visible) {
-          trackColor(colorMap, fill.color, boundVars['fills'] ? String(boundVars['fills']) : null)
+          const varId = boundVars[`fills/${i}/color`]
+          const variable = varId ? graphOf(figma).variables.get(varId) : undefined
+          trackColor(colorMap, fill.color, variable?.name ?? null)
         }
       }
-      for (const stroke of raw.strokes) {
+      for (let i = 0; i < raw.strokes.length; i++) {
+        const stroke = raw.strokes[i]
         if (stroke.visible) {
-          trackColor(
-            colorMap,
-            stroke.color,
-            boundVars['strokes'] ? String(boundVars['strokes']) : null
-          )
+          const varId = boundVars[`strokes/${i}/color`]
+          const variable = varId ? graphOf(figma).variables.get(varId) : undefined
+          trackColor(colorMap, stroke.color, variable?.name ?? null)
         }
       }
       return false
     })
 
-    const colors = [...colorMap.values()].sort((a, b) => b.count - a.count).slice(0, limit)
+    const colors = orderBy([...colorMap.values()], ['count'], ['desc']).slice(0, limit)
 
     const result: Record<string, unknown> = {
       totalNodes,
@@ -76,9 +89,11 @@ export const analyzeColors = defineTool({
     }
 
     if (args.show_similar) {
-      const hardcoded = [...colorMap.values()]
-        .filter((c) => !c.variableName)
-        .sort((a, b) => b.count - a.count)
+      const hardcoded = orderBy(
+        [...colorMap.values()].filter((c) => !c.variableName),
+        ['count'],
+        ['desc']
+      )
       const used = new Set<string>()
       const clusters: { colors: string[]; totalCount: number; suggestedHex: string }[] = []
 
@@ -96,13 +111,13 @@ export const analyzeColors = defineTool({
         if (cluster.length > 1) {
           clusters.push({
             colors: cluster.map((c) => c.hex),
-            totalCount: cluster.reduce((sum, c) => sum + c.count, 0),
+            totalCount: sumBy(cluster, (color) => color.count),
             suggestedHex: color.hex
           })
         }
       }
 
-      result.similarClusters = clusters.sort((a, b) => b.colors.length - a.colors.length)
+      result.similarClusters = orderBy(clusters, [(cluster) => cluster.colors.length], ['desc'])
     }
 
     return result

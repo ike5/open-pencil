@@ -1,10 +1,22 @@
-import type { SceneGraph, SceneNode } from '#core/scene-graph'
+import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+
+import type { RenderOverlays } from '#core/canvas/renderer'
+import { createSceneGeometry } from '#core/geometry'
+
+import { hasFrameTitle } from './layout'
 
 export interface CachedSection {
   nodeId: string
   absX: number
   absY: number
   nested: boolean
+}
+
+/** A frame on the page or in a section, which shows its name above it. */
+export interface CachedFrame {
+  nodeId: string
+  absX: number
+  absY: number
 }
 
 export interface CachedComponent {
@@ -22,6 +34,7 @@ interface Viewport {
 }
 
 const LABEL_TYPES = new Set(['COMPONENT', 'COMPONENT_SET'])
+const COMPONENT_LABEL_PARENT_TYPES = new Set(['CANVAS', 'SECTION', 'COMPONENT_SET'])
 
 function isInViewport(absX: number, absY: number, w: number, h: number, vp: Viewport): boolean {
   return absX + w >= vp.x && absY + h >= vp.y && absX <= vp.x + vp.w && absY <= vp.y + vp.h
@@ -34,14 +47,18 @@ function collectVisibleLabels<
   graph: SceneGraph,
   viewport: Viewport,
   cachedItems: T[],
-  metadata: (cached: T) => U
+  metadata: (cached: T) => U,
+  preview: RenderOverlays['rotationPreview']
 ): Array<{ node: SceneNode; absX: number; absY: number } & U> {
   const result: Array<{ node: SceneNode; absX: number; absY: number } & U> = []
+  const geometry = createSceneGeometry(graph, preview)
   for (const cached of cachedItems) {
     const node = graph.getNode(cached.nodeId)
-    if (!node || !isInViewport(cached.absX, cached.absY, node.width, node.height, viewport))
-      continue
-    result.push({ node, absX: cached.absX, absY: cached.absY, ...metadata(cached) })
+    if (!node) continue
+    const bounds = geometry.bounds(node)
+    if (!isInViewport(bounds.x, bounds.y, bounds.width, bounds.height, viewport)) continue
+    const origin = geometry.toWorld(node, { x: 0, y: 0 })
+    result.push({ node, absX: origin.x, absY: origin.y, ...metadata(cached) })
   }
   return result
 }
@@ -49,58 +66,115 @@ function collectVisibleLabels<
 export class LabelCache {
   private sections: CachedSection[] = []
   private components: CachedComponent[] = []
+  private frames: CachedFrame[] = []
+  private componentSets: CachedFrame[] = []
   private cachedSceneVersion = -1
+  private cachedPositionPreviewVersion = -1
   private cachedPageId: string | null = null
 
-  update(graph: SceneGraph, pageId: string | null, sceneVersion: number): void {
-    if (sceneVersion === this.cachedSceneVersion && pageId === this.cachedPageId) return
+  update(
+    graph: SceneGraph,
+    pageId: string | null,
+    sceneVersion: number,
+    positionPreviewVersion = graph.positionPreviewVersion
+  ): void {
+    if (
+      sceneVersion === this.cachedSceneVersion &&
+      positionPreviewVersion === this.cachedPositionPreviewVersion &&
+      pageId === this.cachedPageId
+    ) {
+      return
+    }
     this.rebuild(graph, pageId)
     this.cachedSceneVersion = sceneVersion
+    this.cachedPositionPreviewVersion = positionPreviewVersion
     this.cachedPageId = pageId
   }
 
   invalidate(): void {
     this.cachedSceneVersion = -1
+    this.cachedPositionPreviewVersion = -1
     this.cachedPageId = null
     this.sections = []
     this.components = []
+    this.frames = []
+    this.componentSets = []
   }
 
   getSections(
     graph: SceneGraph,
-    viewport: Viewport
+    viewport: Viewport,
+    preview?: RenderOverlays['rotationPreview']
   ): Array<{ node: SceneNode; absX: number; absY: number; nested: boolean }> {
-    return collectVisibleLabels(graph, viewport, this.sections, (cached) => ({
-      nested: cached.nested
-    }))
+    return collectVisibleLabels(
+      graph,
+      viewport,
+      this.sections,
+      (cached) => ({
+        nested: cached.nested
+      }),
+      preview
+    )
   }
 
   getComponents(
     graph: SceneGraph,
-    viewport: Viewport
+    viewport: Viewport,
+    preview?: RenderOverlays['rotationPreview']
   ): Array<{ node: SceneNode; absX: number; absY: number; inside: boolean }> {
-    return collectVisibleLabels(graph, viewport, this.components, (cached) => ({
-      inside: cached.parentType === 'COMPONENT_SET'
-    }))
+    return collectVisibleLabels(
+      graph,
+      viewport,
+      this.components,
+      () => ({
+        inside: false
+      }),
+      preview
+    )
+  }
+
+  getFrames(
+    graph: SceneGraph,
+    viewport: Viewport,
+    preview?: RenderOverlays['rotationPreview']
+  ): Array<{ node: SceneNode; absX: number; absY: number }> {
+    return collectVisibleLabels(graph, viewport, this.frames, () => ({}), preview)
+  }
+
+  /** Every visible component set on the page in the viewport, wherever it is nested. */
+  getComponentSets(
+    graph: SceneGraph,
+    viewport: Viewport,
+    preview?: RenderOverlays['rotationPreview']
+  ): Array<{ node: SceneNode; absX: number; absY: number }> {
+    return collectVisibleLabels(graph, viewport, this.componentSets, () => ({}), preview)
+  }
+
+  getAllFrames(): readonly CachedFrame[] {
+    return this.frames
+  }
+
+  getAllSections(): readonly CachedSection[] {
+    return this.sections
+  }
+
+  getAllComponents(): readonly CachedComponent[] {
+    return this.components
   }
 
   private rebuild(graph: SceneGraph, pageId: string | null): void {
     this.sections = []
     this.components = []
+    this.frames = []
+    this.componentSets = []
 
     const pageNode = graph.getNode(pageId ?? graph.rootId)
     if (!pageNode) return
 
-    this.walkChildren(graph, pageNode.id, 0, 0, false)
+    this.walkChildren(graph, pageNode.id, false)
   }
 
-  private walkChildren(
-    graph: SceneGraph,
-    parentId: string,
-    ox: number,
-    oy: number,
-    insideSection: boolean
-  ): void {
+  private walkChildren(graph: SceneGraph, parentId: string, insideSection: boolean): void {
     const parent = graph.getNode(parentId)
     if (!parent) return
     const parentType = parent.type
@@ -108,19 +182,34 @@ export class LabelCache {
     for (const childId of parent.childIds) {
       const child = graph.getNode(childId)
       if (!child || !child.visible) continue
-      const ax = ox + child.x
-      const ay = oy + child.y
 
       if (child.type === 'SECTION') {
-        this.sections.push({ nodeId: childId, absX: ax, absY: ay, nested: insideSection })
-        this.walkChildren(graph, childId, ax, ay, true)
+        const origin = graph.getAbsolutePosition(childId)
+        this.sections.push({
+          nodeId: childId,
+          absX: origin.x,
+          absY: origin.y,
+          nested: insideSection
+        })
+        this.walkChildren(graph, childId, true)
       } else if (LABEL_TYPES.has(child.type)) {
-        this.components.push({ nodeId: childId, absX: ax, absY: ay, parentType })
-        if (child.childIds.length > 0) {
-          this.walkChildren(graph, childId, ax, ay, insideSection)
+        if (child.type === 'COMPONENT_SET') {
+          const origin = graph.getAbsolutePosition(childId)
+          this.componentSets.push({ nodeId: childId, absX: origin.x, absY: origin.y })
         }
-      } else if (child.childIds.length > 0) {
-        this.walkChildren(graph, childId, ax, ay, insideSection)
+        if (COMPONENT_LABEL_PARENT_TYPES.has(parentType)) {
+          const origin = graph.getAbsolutePosition(childId)
+          this.components.push({ nodeId: childId, absX: origin.x, absY: origin.y, parentType })
+        }
+        if (child.childIds.length > 0) {
+          this.walkChildren(graph, childId, insideSection)
+        }
+      } else {
+        if (hasFrameTitle(child, parentType)) {
+          const origin = graph.getAbsolutePosition(childId)
+          this.frames.push({ nodeId: childId, absX: origin.x, absY: origin.y })
+        }
+        if (child.childIds.length > 0) this.walkChildren(graph, childId, insideSection)
       }
     }
   }

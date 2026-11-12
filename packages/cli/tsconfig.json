@@ -5,12 +5,10 @@
     "moduleResolution": "bundler",
     "strict": true,
     "skipLibCheck": true,
-    "declaration": true,
+    "types": ["node"],
     "paths": {
       "#cli/*": ["./src/*"]
-    },
-    "outDir": "dist",
-    "rootDir": "src"
+    }
   },
   "include": ["src"]
 }

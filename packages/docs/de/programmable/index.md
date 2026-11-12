@@ -1,51 +1,75 @@
 ---
 layout: doc
-title: KI & Automatisierung
-description: Jede Operation in OpenPencil ist skriptfähig — KI-Chat, CLI, JSX-Renderer, MCP-Server, Echtzeit-Zusammenarbeit.
+title: AI und Automatisierung
+description: OpenPencil über AI-Chat, CLI, JSX, MCP und APIs automatisieren.
 ---
 
-# KI & Automatisierung
+# AI und Automatisierung
 
-OpenPencil behandelt Designdateien als Daten. Jede im Editor verfügbare Operation — Formen erstellen, Füllungen setzen, Auto-Layout verwalten, Assets exportieren — ist auch über das Terminal, über KI-Agenten und aus Code heraus verfügbar. Keine Plugins zu installieren, keine API-Schlüssel, keine Warteliste.
+OpenPencil behandelt Designdateien als strukturierte Daten. Vorgänge aus dem Editor — Formen erstellen, Füllungen ändern, automatische Anordnung konfigurieren oder Ressourcen exportieren — stehen auch über CLI, AI-Agenten und APIs zur Verfügung.
 
-Die Editor-Oberfläche und die Automatisierungsschnittstellen verwenden dieselbe Engine. Was du per Klick machen kannst, kannst du auch per Skript machen.
+Editor und Automatisierung verwenden denselben Kern. Ein Vorgang verhält sich daher gleich, ob er über die Oberfläche, ein Skript oder einen Agenten ausgelöst wird.
 
-## KI-Chat
+## AI-Chat
 
-Der integrierte Assistent hat Zugriff auf 87 Werkzeuge, die die gesamte Oberfläche des Editors abdecken. Beschreibe in natürlicher Sprache, was du möchtest — „füge allen Buttons einen 16px Schlagschatten hinzu", „erstelle eine Kartenkomponente mit Dark-Mode-Variante", „exportiere jeden Frame auf dieser Seite in 2×".
+Der integrierte Assistent kann mehr als 90 Werkzeuge ausführen. Eine Anweisung kann beispielsweise Schatten mehrerer Schaltflächen ändern, eine Komponente mit dunkler Variante erstellen oder alle Rahmen einer Seite im Maßstab 2× exportieren.
 
-[KI-Chat →](./ai-chat)
+[AI-Chat →](./ai-chat)
 
 ## Zusammenarbeit
 
-Echtzeit-Multiplayer-Bearbeitung über Peer-to-Peer WebRTC. Kein Server, kein Konto. Teile einen Raum-Link und bearbeite gemeinsam mit Live-Cursorn und Folgemodus. Der Dokumentzustand wird über CRDT synchronisiert, sodass Bearbeitungen auch bei instabilen Verbindungen automatisch zusammengeführt werden.
+OpenPencil synchronisiert Dokumente direkt zwischen Teilnehmern über WebRTC. Ein geteilter Raumlink genügt; ein zentraler Server und ein Konto sind nicht erforderlich. Teilnehmerzeiger und Ansichtsverfolgung zeigen die anderen Personen. Yjs CRDT führt gleichzeitige Änderungen zusammen.
 
 [Zusammenarbeit →](./collaboration)
 
 ## JSX-Renderer
 
-Beschreibe UI als JSX — die gleiche Syntax, die LLMs bereits von React kennen. Ein einziger Aufruf kann einen ganzen Komponentenbaum mit Frames, Text, Auto-Layout, Füllungen und Konturen erstellen. Kompakt, deklarativ und diff-fähig.
+Eine Oberfläche kann deklarativ als JSX beschrieben werden. Ein Aufruf erstellt einen vollständigen Baum aus Rahmen, Text, automatischer Anordnung, Füllungen und Konturen.
 
-In die andere Richtung kannst du jede Auswahl als JSX mit Tailwind-Klassen exportieren — nützlich für die Übergabe an die Entwicklung oder um Designs zurück in ein LLM einzuspeisen.
+In der Gegenrichtung exportiert OpenPencil eine Auswahl als JSX oder HTML mit Tailwind-Klassen. Das Ergebnis kann als Ausgangspunkt für Umsetzung, Codeprüfung oder einen weiteren AI-Schritt dienen.
 
 [JSX-Renderer →](./jsx-renderer)
 
 ## CLI
 
-`.fig`-Dateien inspizieren, exportieren und analysieren, ohne den Editor zu öffnen. Seiten auflisten, Knoten suchen, Design-Tokens extrahieren, als PNG rendern — alles vom Terminal aus mit maschinenlesbarer JSON-Ausgabe.
+Die CLI untersucht, exportiert und analysiert `.fig`-Dateien ohne geöffneten Editor. Sie listet Seiten und Objekte auf, sucht Inhalte, extrahiert Designtoken und rendert PNG. Für die Weiterverarbeitung steht eine JSON-Ausgabe zur Verfügung.
 
-Das CLI verbindet sich auch über RPC mit der laufenden Desktop-App, sodass du den Editor skripten kannst, während du ihn benutzt.
+Über RPC kann die CLI außerdem den laufenden Desktop-Editor steuern: Dokumente öffnen, speichern und wechseln, Änderungen rückgängig machen, Einstellungen ändern und jedes MCP-Werkzeug aufrufen.
 
-[Dateien inspizieren](./cli/inspecting) · [Exportieren](./cli/exporting) · [Designs analysieren](./cli/analyzing) · [Skripting](./cli/scripting)
+[Dateien untersuchen](./cli/inspecting) · [Export](./cli/exporting) · [Designs analysieren](./cli/analyzing) · [Skripte](./cli/scripting) · [App steuern](/programmable/cli/app-control)
 
 ## MCP-Server
 
-Verbinde Claude Code, Cursor, Windsurf oder jeden MCP-kompatiblen Client mit OpenPencil. Der Server stellt 90 Werkzeuge zum Lesen, Erstellen und Bearbeiten von Designs bereit — dieselben Werkzeuge, die der integrierte KI-Chat verwendet. Läuft über stdio oder HTTP mit Session-Unterstützung.
+Claude Code, Cursor, Windsurf und andere MCP-Clients können dieselben 90 Werkzeuge verwenden wie der integrierte AI-Chat. Der Server unterstützt stdio und HTTP mit Sitzungen.
 
-[MCP-Server →](./mcp-server)
+[MCP-Server →](/programmable/mcp-server)
 
-## Warum offen?
+## URL-Schema {#url-scheme}
 
-Figma ist eine geschlossene Plattform. Ihr MCP-Server ist schreibgeschützt. Der CDP-Browserzugang wurde in Version 126 abgeschafft. Designdateien liegen in einem proprietären Format auf fremden Servern. Plugin-Entwicklung erfordert eine eigene Laufzeitumgebung mit eingeschränkten APIs.
+Die Desktop-Anwendung registriert `openpencil://`. Eine veröffentlichte Seite – eine Storybook-Story, eine Design-Review, eine README – kann damit direkt auf eine Ebene verweisen:
 
-OpenPencil ist die Alternative: Open Source, MIT-lizenziert, jede Operation skriptfähig, Daten lokal gespeichert. Deine Designdateien gehören dir — inspiziere sie, transformiere sie, leite sie in die CI weiter, speise sie in ein LLM ein. Keine Erlaubnis nötig.
+```
+openpencil://open?file=web/design/hikyo.pen&node=Button/Large/Default
+```
+
+`file` ist ein auf das Repository bezogener Pfad, der auf `.pen` oder `.fig` endet; absolute Pfade und Segmente `.` oder `..` werden abgelehnt. `node` ist optional. Beide Werte sind URL-kodiert – Pfadtrenner dürfen unkodiert bleiben, ein literales `+` muss jedoch als `%2B` gesendet werden –, und bei einem wiederholten Schlüssel gilt der letzte Wert.
+
+Die App gleicht `file` mit den Pfaden der geöffneten Tabs als vollständige abschließende Segmentfolge ab und fokussiert diesen Tab, ohne das Dokument erneut zu lesen. So wird die Ebene auch dann ausgewählt, wenn die Datei seit dem Öffnen verschoben wurde oder nicht mehr lesbar ist. Es gilt der erste geöffnete Tab, dessen Pfad auf den angeforderten Pfad endet; das ist wichtig, wenn zwei Checkouts dieselbe Datei geöffnet haben. Die Segmente werden so verglichen, wie es das Dateisystem der Plattform tut: unter macOS und Windows ohne Beachtung der ASCII-Groß-/Kleinschreibung, unter Linux exakt. `Web/Design/hikyo.pen` und `web/design/hikyo.pen` sind daher auf einem Mac dieselbe Datei und unter Linux zwei verschiedene. Passt kein geöffneter Tab, fragt ein Dateidialog einmal nach der Datei; die gewählte Datei muss auf denselben relativen Pfad enden, sonst wird der Link abgebrochen. Es wird kein Pfad an ein Stammverzeichnis angehängt, und über das, was der Dialog liefert, hinaus wird kein Dateisystemzugriff gewährt. Eine Datei, die der Link tatsächlich öffnet – die gewählte –, kommt wie jede andere geöffnete Datei in die Liste der zuletzt geöffneten Dateien; das Fokussieren eines bereits geöffneten Tabs ändert die Liste nicht, weil nichts geöffnet wurde.
+
+Mit einem Objektnamen wählt die App alle Ebenen auf der aktuellen Seite aus, die genau diesen Namen tragen, und zoomt die Ansicht auf die gesamte Auswahl. Enthält die aktuelle Seite keine, wechselt die App zur ersten Seite, die eine enthält, und lädt dazu bei Bedarf Seiten nach. Ein unbekannter Name zeigt einen Hinweis und lässt das Dokument geöffnet. Das Schema kann nur eine Datei öffnen und Ebenen auswählen.
+
+Die Webversion nimmt denselben Link aus ihrer Adressleiste an:
+
+```
+https://app.openpencil.dev/?file=https://raw.githubusercontent.com/open-pencil/open-pencil/master/tests/fixtures/pencil_button.pen&node=Button/Large/Default
+```
+
+Hier ist `file` eine absolute `https:`-URL, die auf `.pen` oder `.fig` endet – die Webversion hat kein Dateisystem, daher werden ein relativer Pfad, eine `http:`-URL oder jede andere Endung mit einer Warnung in der Konsole und sonst ohne Folgen abgelehnt. Die Endung wird dem Pfad der URL entnommen, ein Query-String an der verlinkten Datei ändert also nichts. Ein Fragment wird vor dem Abruf entfernt: Es erreicht den Server nie, daher öffnen `…/hikyo.pen#a` und `…/hikyo.pen#b` einen Tab, nicht zwei. `node` verhält sich genau wie oben: dieselbe Auswahl nach exaktem Namen samt Zoom, derselbe Hinweis, wenn keine Ebene den Namen trägt. Beide Werte sind URL-kodiert, ein literales `+` muss als `%2B` gesendet werden, und bei einem wiederholten Schlüssel gilt der letzte Wert, wie in der Desktop-Anwendung. Der Link wird auf jeder Route verarbeitet, `/share/<room>?file=…` und `/demo?file=…` funktionieren also wie `/?file=…`.
+
+Der Browser ruft die Datei Cross-Origin ab, der Host muss das daher erlauben: `raw.githubusercontent.com` sendet `Access-Control-Allow-Origin: *` und funktioniert. Die Anfrage enthält keine Zugangsdaten und folgt keinen Weiterleitungen, damit ein `https:`-Link nicht auf einen unverschlüsselten umgeleitet werden kann – eine URL der Form `https://github.com/<owner>/<repo>/raw/...` leitet auf `raw.githubusercontent.com` weiter und wird deshalb abgelehnt; verlinken Sie daher direkt den Raw-Host. `file` und `node` werden über den Router aus der Adressleiste entfernt, sobald sie gelesen wurden – vor dem Abruf und auch dann, wenn der Link abgelehnt wurde –, sodass ein Neuladen das Dokument nicht erneut öffnet und weder eine kopierte URL noch eine spätere Navigation in der App den Link enthält. Ein verlinktes Dokument ist auf 64 MiB begrenzt: Der Body wird beim Streamen mitgezählt, nicht aus `Content-Length` übernommen, und die Anfrage wird abgebrochen, sobald die Grenze überschritten ist; der Link meldet dann, dass die Datei 64 MiB überschreitet. Eine Bereitstellung, die die App mit einer Content-Security-Policy ausliefert, muss den verlinkten Host in `connect-src` erlauben, sonst wird der Abruf blockiert und der Link meldet, dass die Datei nicht geöffnet werden konnte.
+
+Unter macOS gehört das Schema dem installierten App-Bundle, Links erreichen daher einen installierten Build und keinen `tauri dev`-Prozess. Unter Windows und Linux kommt der Link über das Deep-Link-Plugin an, auch wenn die App noch nicht läuft: Der Link wird beim Start vorgemerkt und verarbeitet, sobald der Editor bereit ist; unter Linux reicht der mitgelieferte Desktop-Eintrag den Link über `%U` weiter.
+
+## Offene Plattform
+
+OpenPencil steht unter der MIT-Lizenz, speichert Dokumente lokal und macht seine Vorgänge programmatisch zugänglich. `.fig`-Dateien können untersucht, umgewandelt, in CI verarbeitet oder als Kontext an ein Sprachmodell übergeben werden, ohne an einen bestimmten Hostinganbieter gebunden zu sein.

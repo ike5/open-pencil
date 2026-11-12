@@ -1,64 +1,22 @@
 ---
 title: usePosition
-description: Odczytuj i aktualizuj pozycję, rozmiar, obrót, wyrównanie i odbicie zaznaczonego węzła.
+description: Odczytywanie i zmiana położenia, rozmiaru, obrotu, wyrównania i odbicia zaznaczonego obiektu.
 ---
 
 # usePosition
 
-`usePosition()` to kompozyt kontrolek dla UI związanego z pozycją.
-
-Udostępnia wartości zaznaczonego węzła takie jak:
-
-- `x`
-- `y`
-- `width`
-- `height`
-- `rotation`
-
-i akcje takie jak:
-
-- wyrównanie
-- odbicie
-- obrót
-- przeciąganie/aktualizacja właściwości liczbowych
-
-## Użycie
+`usePosition()` udostępnia `panelProp(key)` dla `'x'`, `'y'`, `'width'`, `'height'` i `'rotation'`: wartość pola zaokrągloną do dwóch miejsc po przecinku, jak w panelu Figmy, albo `MIXED`, gdy zaznaczone warstwy pokazują różne wartości. Warstwy zachowują dokładne wartości. Udostępnia też działania wyrównania, odbicia, obrotu oraz podglądu i zapisu właściwości liczbowych.
 
 ```ts
-import { usePosition } from '@open-pencil/vue'
-
 const position = usePosition()
-```
+const x = position.panelProp('x')
 
-## Podstawowy przykład
-
-```ts
-const { x, y, width, height, rotation, updateProp, commitProp } = usePosition()
-```
-
-## Przykłady praktyczne
-
-### Wyrównaj zaznaczone węzły
-
-```ts
 position.align('horizontal', 'center')
-position.align('vertical', 'min')
-```
-
-### Odbij selekcję
-
-```ts
 position.flip('horizontal')
-position.flip('vertical')
-```
-
-### Obróć selekcję
-
-```ts
 position.rotate(90)
 ```
 
-## Powiązane API
+## Zobacz też
 
 - [useLayout](./use-layout)
 - [useAppearance](./use-appearance)

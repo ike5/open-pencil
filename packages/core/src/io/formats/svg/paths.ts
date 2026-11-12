@@ -1,110 +1,47 @@
-import { polygonVertices } from '#core/geometry'
-import type { SceneNode, VectorNetwork, VectorSegment, VectorVertex } from '#core/scene-graph'
+import { compact } from 'es-toolkit/array'
 
-const CMD_CLOSE = 0
-const CMD_MOVE_TO = 1
-const CMD_LINE_TO = 2
-const CMD_CUBIC_TO = 4
+import type { SceneNode } from '@open-pencil/scene-graph'
+import {
+  GeometryCommand,
+  polygonVertices,
+  readGeometryBlob
+} from '@open-pencil/scene-graph/geometry'
+import { outlineSVGPath, polygonOutline } from '@open-pencil/scene-graph/polygon'
+import { shapeWithTextGeometry } from '@open-pencil/scene-graph/shape-with-text'
+import { vectorNetworkToSVGPaths } from '@open-pencil/scene-graph/vector-network'
+
+import { traceSmoothRect, type SmoothCornerSink } from '#core/canvas/paths/smooth-corners'
+import { nodeHasRadius, nodeHasSmoothCorners } from '#core/canvas/shapes'
+import type { PathSink } from '#core/vector/path-helpers'
 
 export function round(n: number, decimals = 2): number {
   const factor = 10 ** decimals
   return Math.round(n * factor) / factor
 }
 
-export function geometryBlobToSVGPath(blob: Uint8Array): string {
-  if (blob.length === 0) return ''
-  const dv = new DataView(blob.buffer, blob.byteOffset, blob.byteLength)
-  let o = 0
+function coordinate(value: number, decimals: number | null): number {
+  return decimals === null ? value : round(value, decimals)
+}
+
+export function geometryBlobToSVGPath(blob: Uint8Array, decimals: number | null = 2): string {
   const parts: string[] = []
-
-  while (o < blob.length) {
-    const cmd = blob[o++]
-    switch (cmd) {
-      case CMD_CLOSE:
-        parts.push('Z')
-        break
-      case CMD_MOVE_TO: {
-        const x = round(dv.getFloat32(o, true))
-        const y = round(dv.getFloat32(o + 4, true))
-        o += 8
-        parts.push(`M${x} ${y}`)
-        break
-      }
-      case CMD_LINE_TO: {
-        const x = round(dv.getFloat32(o, true))
-        const y = round(dv.getFloat32(o + 4, true))
-        o += 8
-        parts.push(`L${x} ${y}`)
-        break
-      }
-      case CMD_CUBIC_TO: {
-        const x1 = round(dv.getFloat32(o, true))
-        const y1 = round(dv.getFloat32(o + 4, true))
-        const x2 = round(dv.getFloat32(o + 8, true))
-        const y2 = round(dv.getFloat32(o + 12, true))
-        const x = round(dv.getFloat32(o + 16, true))
-        const y = round(dv.getFloat32(o + 20, true))
-        o += 24
-        parts.push(`C${x1} ${y1} ${x2} ${y2} ${x} ${y}`)
-        break
-      }
-      default:
-        return parts.join('')
-    }
+  const letters: Record<GeometryCommand, string> = {
+    [GeometryCommand.CLOSE]: 'Z',
+    [GeometryCommand.MOVE]: 'M',
+    [GeometryCommand.LINE]: 'L',
+    [GeometryCommand.QUAD]: 'Q',
+    [GeometryCommand.CUBIC]: 'C'
   }
-
+  readGeometryBlob(blob, (command, coords) => {
+    const values = coords.map((value) => coordinate(value, decimals))
+    parts.push(`${letters[command]}${values.join(' ')}`)
+  })
   return parts.join('')
 }
 
-function segmentToSVG(seg: VectorSegment, vertices: VectorVertex[], forward: boolean): string {
-  const start = forward ? vertices[seg.start] : vertices[seg.end]
-  const end = forward ? vertices[seg.end] : vertices[seg.start]
-  const ts = forward ? seg.tangentStart : { x: -seg.tangentEnd.x, y: -seg.tangentEnd.y }
-  const te = forward ? seg.tangentEnd : { x: -seg.tangentStart.x, y: -seg.tangentStart.y }
-
-  const isStraight =
-    Math.abs(ts.x) < 0.001 &&
-    Math.abs(ts.y) < 0.001 &&
-    Math.abs(te.x) < 0.001 &&
-    Math.abs(te.y) < 0.001
-
-  if (isStraight) {
-    return `L${round(end.x)} ${round(end.y)}`
-  }
-
-  const cp1x = round(start.x + ts.x)
-  const cp1y = round(start.y + ts.y)
-  const cp2x = round(end.x + te.x)
-  const cp2y = round(end.y + te.y)
-  return `C${cp1x} ${cp1y} ${cp2x} ${cp2y} ${round(end.x)} ${round(end.y)}`
-}
-
-export function vectorNetworkToSVGPaths(network: VectorNetwork): string[] {
-  const { vertices, segments, regions } = network
-
-  if (regions.length > 0) {
-    return regions.map((region) => {
-      const parts: string[] = []
-      for (const loop of region.loops) {
-        if (loop.length === 0) continue
-        const firstSeg = segments[loop[0]]
-        parts.push(`M${round(vertices[firstSeg.start].x)} ${round(vertices[firstSeg.start].y)}`)
-        for (const segIdx of loop) {
-          parts.push(segmentToSVG(segments[segIdx], vertices, true))
-        }
-        parts.push('Z')
-      }
-      return parts.join('')
-    })
-  }
-
-  const parts: string[] = []
-  for (const seg of segments) {
-    parts.push(`M${round(vertices[seg.start].x)} ${round(vertices[seg.start].y)}`)
-    parts.push(segmentToSVG(seg, vertices, true))
-  }
-
-  return parts.length > 0 ? [parts.join('')] : []
+/** The outline of a polygon or star whose corners are rounded, as path data. */
+export function roundedPolygonPath(node: SceneNode): string {
+  return outlineSVGPath(polygonOutline(node), (value) => round(value))
 }
 
 export function makePolygonPoints(node: SceneNode): string {
@@ -113,18 +50,22 @@ export function makePolygonPoints(node: SceneNode): string {
     .join(' ')
 }
 
-export function hasRadius(node: SceneNode): boolean {
-  return (
-    node.cornerRadius > 0 ||
-    (node.independentCorners &&
-      (node.topLeftRadius > 0 ||
-        node.topRightRadius > 0 ||
-        node.bottomRightRadius > 0 ||
-        node.bottomLeftRadius > 0))
-  )
-}
+export const hasRadius = nodeHasRadius
+export const hasSmoothCorners = nodeHasSmoothCorners
 
-export function roundedRectPath(node: SceneNode): string {
+type RectOutlineNode = Pick<
+  SceneNode,
+  | 'width'
+  | 'height'
+  | 'cornerRadius'
+  | 'independentCorners'
+  | 'topLeftRadius'
+  | 'topRightRadius'
+  | 'bottomRightRadius'
+  | 'bottomLeftRadius'
+>
+
+export function roundedRectPath(node: RectOutlineNode): string {
   const w = node.width
   const h = node.height
   let tl: number, tr: number, br: number, bl: number
@@ -142,7 +83,7 @@ export function roundedRectPath(node: SceneNode): string {
   br = Math.min(br, w / 2, h / 2)
   bl = Math.min(bl, w / 2, h / 2)
 
-  return [
+  return compact([
     `M${round(tl)} 0`,
     `L${round(w - tr)} 0`,
     tr > 0 ? `A${round(tr)} ${round(tr)} 0 0 1 ${round(w)} ${round(tr)}` : '',
@@ -153,12 +94,10 @@ export function roundedRectPath(node: SceneNode): string {
     `L0 ${round(tl)}`,
     tl > 0 ? `A${round(tl)} ${round(tl)} 0 0 1 ${round(tl)} 0` : '',
     'Z'
-  ]
-    .filter(Boolean)
-    .join('')
+  ]).join('')
 }
 
-export function arcPath(node: SceneNode): string {
+export function arcPath(node: Pick<SceneNode, 'width' | 'height' | 'arcData'>): string {
   if (!node.arcData) return ''
   const { startingAngle, endingAngle, innerRadius } = node.arcData
   const cx = node.width / 2
@@ -167,8 +106,13 @@ export function arcPath(node: SceneNode): string {
   const ry = node.height / 2
 
   const fullCircle = Math.abs(endingAngle - startingAngle) >= Math.PI * 2 - 0.001
-  if (fullCircle && innerRadius <= 0) {
-    return `M${round(cx - rx)} ${round(cy)}A${round(rx)} ${round(ry)} 0 1 1 ${round(cx + rx)} ${round(cy)}A${round(rx)} ${round(ry)} 0 1 1 ${round(cx - rx)} ${round(cy)}Z`
+  const ring = (rx: number, ry: number, sweep: 0 | 1) =>
+    `M${round(cx - rx)} ${round(cy)}A${round(rx)} ${round(ry)} 0 1 ${sweep} ${round(cx + rx)} ${round(cy)}A${round(rx)} ${round(ry)} 0 1 ${sweep} ${round(cx - rx)} ${round(cy)}Z`
+  // A whole ring has no ends to join: it is its outer edge and, for a donut, its hole, wound
+  // the other way so the default nonzero fill leaves the hole empty.
+  if (fullCircle) {
+    const outer = ring(rx, ry, 1)
+    return innerRadius > 0 ? outer + ring(rx * innerRadius, ry * innerRadius, 0) : outer
   }
 
   const x1 = round(cx + rx * Math.cos(startingAngle))
@@ -195,4 +139,100 @@ export function arcPath(node: SceneNode): string {
   }
 
   return parts.join('')
+}
+
+/**
+ * Path commands written as SVG path data into `parts`, as the canvas would build a path, each
+ * coordinate written by `format`.
+ */
+export function svgPathSink(
+  parts: string[],
+  format: (value: number) => number = (value) => round(value)
+): PathSink {
+  const point = (x: number, y: number) => `${format(x)} ${format(y)}`
+  return {
+    moveTo: (x, y) => parts.push(`M${point(x, y)}`),
+    lineTo: (x, y) => parts.push(`L${point(x, y)}`),
+    cubicTo: (x1, y1, x2, y2, x, y) =>
+      parts.push(`C${point(x1, y1)} ${point(x2, y2)} ${point(x, y)}`),
+    close: () => parts.push('Z')
+  }
+}
+
+/** A rectangle with smoothed corners as path data, traced as the canvas draws it. */
+function smoothRectPath(node: RectOutlineNode & Pick<SceneNode, 'cornerSmoothing'>): string {
+  const parts: string[] = []
+  const point = (x: number, y: number) => `${round(x)} ${round(y)}`
+  const sink: SmoothCornerSink = {
+    ...svgPathSink(parts),
+    arcToRotated: (rx, ry, rotation, useSmallArc, isCCW, x, y) =>
+      parts.push(
+        `A${round(rx)} ${round(ry)} ${rotation} ${useSmallArc ? 0 : 1} ${isCCW ? 0 : 1} ${point(x, y)}`
+      )
+  }
+  const box = { left: 0, top: 0, right: node.width, bottom: node.height }
+  return traceSmoothRect(sink, node, box) ? parts.join('') : roundedRectPath(node)
+}
+
+/**
+ * A box layer's outline as path data: its rectangle with its corner radii, smoothed as the canvas
+ * draws them. Frames, rectangles, and other box layers share it for fills, strokes, and clips.
+ */
+export function boxOutlinePath(node: RectOutlineNode & Pick<SceneNode, 'cornerSmoothing'>): string {
+  return node.cornerSmoothing > 0 ? smoothRectPath(node) : roundedRectPath(node)
+}
+
+/** What a layer's outline is drawn from. */
+export type OutlineNode = RectOutlineNode &
+  Pick<
+    SceneNode,
+    'type' | 'arcData' | 'pointCount' | 'starInnerRadius' | 'cornerSmoothing' | 'vectorNetwork'
+  >
+
+const FULL_ELLIPSE = { startingAngle: 0, endingAngle: Math.PI * 2, innerRadius: 0 }
+
+/**
+ * A shape layer's outline in its own box as path data: a rectangle with its corners, an ellipse
+ * or arc, a line, a polygon or star, or a vector's network. Null for other layers.
+ */
+export function nodeOutlinePath(node: OutlineNode): string | null {
+  switch (node.type) {
+    case 'RECTANGLE':
+      return boxOutlinePath(node)
+    case 'ELLIPSE':
+      return arcPath({ ...node, arcData: node.arcData ?? FULL_ELLIPSE })
+    case 'LINE':
+      return `M0 0L${round(node.width)} ${round(node.height)}`
+    case 'POLYGON':
+    case 'STAR':
+      return outlineSVGPath(polygonOutline(node), (value) => round(value))
+    case 'VECTOR':
+      return node.vectorNetwork ? vectorNetworkToSVGPaths(node.vectorNetwork).join('') : null
+    default:
+      return null
+  }
+}
+
+/** A FigJam shape's outline in its own box as path data, with its corner radius. */
+export function shapeWithTextOutlinePath(
+  node: Pick<SceneNode, 'shapeWithTextType' | 'width' | 'height' | 'cornerRadius'>
+): string {
+  const { outline } = shapeWithTextGeometry(
+    node.shapeWithTextType,
+    node.width,
+    node.height,
+    node.cornerRadius
+  )
+  return outlineSVGPath(outline, (value) => round(value))
+}
+
+/**
+ * A FigJam shape's stroke-only inner lines, such as a database's front rim, as path data; null for
+ * a shape without any.
+ */
+export function shapeWithTextDetailsPath(
+  node: Pick<SceneNode, 'shapeWithTextType' | 'width' | 'height'>
+): string | null {
+  const { details } = shapeWithTextGeometry(node.shapeWithTextType, node.width, node.height)
+  return details.length > 0 ? outlineSVGPath(details, (value) => round(value)) : null
 }

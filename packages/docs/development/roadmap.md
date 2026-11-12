@@ -1,161 +1,321 @@
+---
+title: Roadmap
+description: OpenPencil product roadmap and Figma compatibility tracking.
+---
+
 # Roadmap
 
-## Phases
+OpenPencil is moving toward production-grade Figma compatibility while keeping design documents programmable, local-first, and fast on large files.
 
-### Phase 1: Core Engine ✅
+## Current focus
 
-`SceneGraph`, Skia rendering, basic shapes, selection, zoom/pan, undo/redo.
+- Improve `.fig` import/export fidelity against real Figma files and Figma's own rendering.
+- Make saves, recovery, storage synchronization, and automation resilient to crashes, interrupted writes, expired credentials, and temporary provider failures.
+- Keep large design systems responsive in the browser and desktop app.
+- Make international text reliable across platforms, starting with non-Latin font discovery, Arabic/Persian shaping, RTL layout, and broader CJK fixtures.
+- Treat the scene graph as a programmable design document: every important read, write, export, diff, and validation operation should be reachable through UI, CLI, MCP, and SDK surfaces.
+- Keep local files and local-first workflows first-class while making an optional OpenPencil Cloud backend and self-hosted deployments practical.
 
-**Delivered:**
-- Scene graph with flat Map storage and parent-child tree
-- CanvasKit WASM rendering for all shape types
-- Click/shift/marquee selection with resize handles and rotation
-- Zoom/pan with keyboard shortcuts and trackpad gestures
-- Undo/redo wired into all operations
-- Snap guides with edge and center snapping
+## Recently delivered
 
-### Phase 2: Editor UI + Layout ✅
+v0.15.0 and v0.15.1 shipped work that earlier versions of this roadmap listed as in development:
 
-Properties panel, layers panel, toolbar, Yoga layout integration, text editing.
+- Editable ruler guides, snapping to geometry and guides, and Option/Alt distance measurements.
+- Multidimensional component variants and published component libraries with revision review and linked-instance updates.
+- Local recovery of unsaved documents, saved AI conversations, and CLI font diagnostics.
+- Opt-in browser WebMCP access, separate controls for the local MCP server and remote connections, and per-tool permissions.
+- `openpencil://` and web links that open a document and select a layer.
 
-**Delivered:**
-- Vue 3 + Reka UI panels (properties, layers, toolbar)
-- Properties panel split into sections (Appearance, Fill, Stroke, Typography, Layout, Position)
-- ScrubInput component for all numeric inputs
-- Color picker (HSV, hex, opacity)
-- Layers panel with tree view, drag reorder, visibility toggle
-- Auto-layout with Yoga WASM (direction, gap, padding, justify, align)
-- Inline text editing with CanvasKit Paragraph API
-- System font loading via Local Font Access API
-- Canvas rulers with selection highlight
+### Current development version
 
-### Phase 3: File I/O + Visual Features ✅
+Since v0.15.1, the development branch adds:
 
-.fig import/export, Kiwi codec, clipboard, sections, pages, advanced rendering.
+- Behaviours and preview mode: components that run as Reka UI controls, with a Controls page in the demo and Storybook controls for them.
+- Variables modelled as design tokens, edited as tokens, imported and exported as W3C design tokens, written as a CSS token stylesheet, and used by name in exported code.
+- Live design checks: a Lint panel with canvas markers and one-click fixes.
+- AI agents shown on the canvas and to collaborators, with follow mode for people and agents, per-page presence, and MCP agents in rooms.
+- AI chat turns that can be reverted, regenerated, and edited, with tool calls summarised by what they changed and a thinking level per message.
+- The Code tab linked to canvas layers both ways, and visual diff and patch tools, including `openpencil diff`.
+- Collaboration rooms that sync layer trees as a CRDT and open in their own tab.
+- Slots, progressive canvas previews while an AI provider streams JSX, Storybook export, HTML and Tailwind JSX export, and a faster occurrence-scoped `.fig` reader with wider override and variable export.
+- Comments pinned to layers and voice calls in shared rooms, with collaborators watching the AI chat's streamed JSX as it builds.
+- Vue and React components of the selection in the Code tab, with variants as props and Reka UI or Radix behaviour.
+- SVG and HTML imported as editable layers, with HTML and CSS laid out as a browser lays them out.
+- Shader fills from the open-source `shaders` library, on-canvas gradient and corner-radius handles, multi-selection editing, and accent colours with a customizable toolbar.
 
-**Delivered:**
-- .fig file import via Kiwi binary codec
-- .fig file export with Kiwi encoding, Zstd compression, thumbnail generation
-- Save (<kbd>⌘</kbd><kbd>S</kbd>) and Save As (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>S</kbd>) with native OS dialogs
-- Zstd compression via Tauri Rust command (deflate fallback in browser)
-- Vendored kiwi-schema with ESM + sparse field ID patches
-- Figma-compatible clipboard (bidirectional Kiwi binary)
-- Pen tool with vector network model
-- vectorNetworkBlob binary encode/decode
-- Group/ungroup (<kbd>⌘</kbd><kbd>G</kbd>/<kbd>⇧</kbd><kbd>⌘</kbd><kbd>G</kbd>)
-- Tauri v2 desktop app with native menu bar (macOS/Windows/Linux)
-- Sections (S key) with title pills, auto-adopt, luminance-adaptive text
-- Multi-page documents with pages panel, per-page viewport
-- Hover highlight with shape-aware outlines
-- Tier 1 rendering: gradients, image fills, effects, strokes (cap/join/dash), arcs
-- Fill type picker with solid/gradient/image tabs and gradient stop editing
-- Canvas background color per page
-- Fig-import unit tests, layout unit tests, layers-panel E2E tests
+These changes are not part of v0.15.1; they ship with the next release.
 
-### Phase 4: Components + Variables ✅
+See [AI chat](../programmable/ai-chat), [exporting](../user-guide/exporting), and [components and libraries](../user-guide/components).
 
-Components, instances, overrides, variables, collections, modes, image export.
+### In development
 
-**Delivered:**
-- Component creation from frame/group or multi-selection (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>K</kbd>)
-- Component sets from multiple components (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd>) with dashed purple border
-- Instance creation from components with child cloning and componentId mapping
-- Live component-instance sync with override preservation
-- Detach instance back to frame (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd>)
-- Go to main component (cross-page navigation)
-- Always-visible purple component/instance labels with diamond icon
-- Opaque container hit testing (click selects component, double-click enters)
-- Right-click context menu with clipboard, z-order, grouping, component, visibility, lock, move-to-page actions
-- Z-order manipulation (] bring to front, [ send to back)
-- Toggle visibility (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>H</kbd>) and lock (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>L</kbd>)
-- Move nodes between pages via context menu
-- Viewport culling, Paint reuse, RAF render coalescing
-- Effects panel UI (drop shadow, inner shadow, layer/background/foreground blur)
-- Independent corner radius controls (per-corner toggle in Appearance section)
-- GitHub Actions CI/CD for Windows (x64, arm64) and macOS (x64, arm64) builds
-- Polygon and Star drawing tools with pointCount and starInnerRadius
-- Resizable left/right panels via reka-ui Splitter (persistent layout)
-- @/ import alias, shared types module (src/types.ts, src/global.d.ts)
-- Codebase lint-clean: 0 oxlint warnings, 0 tsgo type errors
-- Variables: `COLOR` type with collections, modes, bindings, FillSection variable picker, .fig import
-- Variables dialog: TanStack Table with resizable columns, mode columns, collection tabs with rename, search, demo collections (Primitives/Semantic/Spacing), undo/redo for all variable operations
-- Image export: PNG/JPG/WEBP with ExportSection (scale, format, live preview), <kbd>⇧</kbd><kbd>⌘</kbd><kbd>E</kbd> shortcut, context menu
-- Canvas-native text editing: TextEditor class in core, phantom textarea, cursor/selection/word boundaries on canvas, caret blinking, selection highlights
-- System font enumeration via font-kit Rust crate, OnceLock cache, preload on startup
-- Font picker: virtual scroll (reka-ui ListboxVirtualizer), search filter, CSS font preview
-- ColorInput component extraction, ColorPicker alpha slider checkerboard fix
-- App identity: pencil icon, Cargo crate open_pencil, macOS Dock "OpenPencil"
-- Splash loader during WASM initialization
-- Rich text style runs: per-selection <kbd>⌘</kbd><kbd>B</kbd>/I/U, StyleRun model, ParagraphBuilder pushStyle/pop, .fig roundtrip
-- B/I/U/S toggle buttons in TypographySection
-- Double-click (word), triple-click (select all) text selection
+Work with open pull requests. It may change before it merges:
 
-**Remaining (deferred to Phase 6):**
-- Variant switching
-- Variable types: `FLOAT`, `STRING`, `BOOLEAN` editing UI
-- Variable-driven theming
+- Storybook stories generated as Reka UI components for Vue and Radix UI components for React.
+- Component authoring: variant editing and canvas selection inside components.
+- The OpenPencil Cloud foundation.
 
-### Phase 5: AI Integration & Tooling ✅
+## Near-term work
 
-Core extraction, CLI, MCP server, AI tools, eval command.
+### Figma fidelity
 
-**Delivered:**
-- @open-pencil/core extracted to packages/core/ (zero DOM deps, Bun workspace)
-- @open-pencil/cli with headless .fig operations (info, tree, find, export, analyze, node, pages, variables, eval), CanvasKit CPU rasterization, --json output
-- `eval` command with Figma-compatible Plugin API for headless scripting
-- JSX renderer: TreeNode builders (Frame, Text, Rectangle, etc.), renderTreeNode/renderJsx, Tailwind-like shorthand props, 27 tests
-- jscpd copy-paste detection (15.6% → 0.62%), kiwi-serialize.ts consolidation
-- .fig roundtrip tests with LFS fixtures (material3.fig 87K nodes, nuxtui.fig 314K nodes)
-- .fig import O(n²) → O(n) fix (37s → 535ms on 87K nodes), ByteBuffer optimization
-- AI chat: OpenRouter direct (no backend), Stronghold key storage, 87 tools split across domain files in `tools/`, model selector, <kbd>⌘</kbd><kbd>J</kbd> toggle, streaming markdown, Playwright tests with mock transport
-- 49 additional AI/MCP tools ported from figma-use (87 total): granular set tools, node operations, variable CRUD, boolean operations, vector path tools, viewport control
-- MCP server (@open-pencil/mcp): stdio + HTTP (Hono + Streamable HTTP with sessions), 87 core tools + 3 file management tools (90 total), runs on Bun and Node.js
-- Unified tool definitions: define once in `packages/core/src/tools/` (split by domain), adapt for AI chat (valibot), MCP (zod), CLI (eval)
-- Code panel: sceneNodeToJsx() export, Prism.js highlighting, line numbers, copy button, 14 tests
-- Properties panel restructured: Design | Code | AI tabs
-- App menu bar for browser mode (File, Edit, View, Object, Text, Arrange)
-- Autosave: debounced 3s write after last scene change
-- Multi-selection properties panel with shared/mixed value handling
-- npm publishing with provenance for core, cli, and mcp packages
+- Preserve and round-trip more Figma metadata safely.
+- Add visual regression coverage for full multi-page `.fig` documents. `bun tools/generate/visual-oracles/src/cli.ts export-fixtures` exports current smoke fixture pages to `/tmp` for manual comparison without committing large images; `tests/fixtures/figma-oracles/visual-comparison-report.json` records the current Figma-vs-OpenPencil oracle diff findings.
+- Close high-impact renderer gaps: remaining mask edge cases, blend isolation, pattern fills, and broader variable-font fixtures.
+- Improve boolean operation editing/export now that imported Figma `BOOLEAN_OPERATION` nodes remain boolean operations.
 
-**Planned:**
-- Attached mode: WebSocket to running editor for eval, create, export, screenshot
-- Design guidelines system
-- Screenshot verification loop
+### Editor depth
 
-### Phase 6: Collaboration + Distribution 🟡
+- Complete variable inspector coverage for common numeric/text/layout fields.
+- Extend component and instance authoring with deeper override inspection and slots. Multidimensional variant definitions, text, boolean, and instance-swap property authoring, exposed nested instances, instance property editing, and component-library publish/update workflows are already supported.
+- Treat variables, styles, components, and libraries as governed design-system assets with proposal, review, publish, update, migration, and conformance workflows.
+- Complete layout-grid style parity beyond existing grid geometry controls and editable page/frame guides.
+- Extend inspection aids beyond the existing Option/Alt measurements between selected and hovered layers.
+- Expand vector editing workflows without regressing imported vector fidelity.
 
-Real-time collaboration, prototyping, comments, desktop distribution.
+### Reliability and international text
 
-**Delivered:**
-- P2P collaboration via Trystero (WebRTC) + Yjs CRDT — no server relay
-- Awareness protocol: live cursors, selections, presence with colored cursor arrows
-- Follow mode: click peer avatar to follow their viewport
-- Local persistence via y-indexeddb
-- Share link at `/share/<room-id>` with secure room IDs
-- Effects rendering: drop shadow, inner shadow, shadow spread, layer blur, background blur, foreground blur
-- Per-node SkPicture cache for effects (zero re-computation for static effects)
-- Multi-file tabs: <kbd>⌘</kbd><kbd>N</kbd>/<kbd>⌘</kbd><kbd>T</kbd> new tab, <kbd>⌘</kbd><kbd>W</kbd> close, <kbd>⌘</kbd><kbd>O</kbd> open in new tab
-- Apple code signing and notarization for macOS builds
-- Linux builds (x64) added to CI
-- Git LFS moved to Cloudflare R2
-- VitePress documentation site at openpencil.dev with i18n (6 languages)
-- CI/PR templates, CONTRIBUTING.md, SECURITY.md
+- Make document saves atomic and recoverable, including unsaved documents created through MCP and interrupted local or remote writes.
+- Surface provider, model-budget, renderer, and automation failures with actionable recovery paths instead of silent stalls.
+- Make desktop automation recover from orphaned processes and renderer crashes without manual cleanup.
+- Prevent non-Latin font discovery and rendering crashes across platforms; add Arabic/Persian shaping and RTL layout, then broaden CJK and mixed-script visual fixtures.
+- Build a portable-font strategy for reproducible documents across machines on top of existing substitution visibility and agent-readable font status, including curated redistributable fonts, embedded or linked document fonts, and licensing metadata ([#502](https://github.com/open-pencil/open-pencil/issues/502), [#503](https://github.com/open-pencil/open-pencil/issues/503)).
 
-**Planned:**
-- Prototyping (frame connections, transitions, animations)
-- Comments (pin, threads, resolve)
-- PWA support
-- Variant switching, `FLOAT`/STRING/BOOLEAN variable UI, variable-driven theming
-- Full Figma compatibility test suite
+### Cloud and self-hosting
 
-## Timeline
+- Provide an optional OpenPencil Cloud backend for account-based workspace sync, sharing, collaboration, comments, and managed team libraries without making cloud accounts mandatory for the editor.
+- Support organizations and teams with invitations, viewer/editor/admin roles, link-sharing policies, service accounts, API tokens, and enterprise identity through standard OIDC/SSO integrations.
+- Publish documented backend APIs and webhooks for workspace, document, membership, comment, version, and automation events so Cloud and self-hosted deployments integrate with existing developer workflows.
+- Add workspace organization for projects, folders, templates, search, indexing, and server-generated previews while preserving stable document identity.
+- Add version history with automatic snapshots, named checkpoints, restore, retention controls, and an auditable record of important document and membership changes.
+- Provide a durable collaboration relay for deterministic initial sync, presence, reconnects, and restricted-network environments while keeping direct local/P2P workflows available where practical.
+- Publish a production-ready self-hosted deployment for teams that need their own storage, identity, network boundary, data location, and retention policy.
+- Make self-hosting maintainable with guided deployment, upgrades, backups, health monitoring, observability, and documented recovery procedures.
+- Provide explicit data-governance controls for export, deletion, encryption, retention, auditability, and deployment-region or residency requirements.
+- Keep AI and media capabilities BYOK so Cloud and self-hosted users connect and control their own model and provider credentials.
+- Let documents move between device-only, OpenPencil Cloud, self-hosted, and user-owned storage without losing identity or history.
+- Add explicit conflict, offline, sync-health, migration, backup, quota, and recovery UX for every remote deployment mode.
 
-| Phase | Estimated Duration | Status |
-|-------|-------------------|--------|
-| Phase 1: Core Engine | 3 months | ✅ Complete |
-| Phase 2: Editor UI + Layout | 3 months | ✅ Complete |
-| Phase 3: File I/O + Visual Features | 2 months | ✅ Complete |
-| Phase 4: Components + Variables | 2 months | ✅ Complete |
-| Phase 5: AI Integration & Tooling | 2 months | ✅ Complete |
-| Phase 6: Collaboration + Distribution | 2 months | 🟡 In Progress |
+### Agent workflows
+
+- Polish the official `SKILL.md` guidance for OpenPencil so agents use the full inspect → act → render/measure → compare → iterate loop instead of relying on one-shot prompting.
+- Publish tested AI workflow recipes for common tasks: create from prompt, edit a selected design, compare against a screenshot or Figma reference, fix visual regressions, extract tokens, and batch-migrate files.
+- Accept screenshots and reference images as first-class agent inputs, and return selection/page/viewport renders as native image content to vision-capable MCP and chat clients.
+- Support opt-in web retrieval, external MCP connectors, and sandboxed code execution through explicit capability and permission boundaries rather than granting every model ambient access.
+- Make structured node-tree diffs a first-class, Git-friendly review artifact for UI, CLI, MCP, SDK, and CI edits instead of relying only on screenshot comparisons.
+- Expand design lint findings with expected/actual evidence and safe autofixes; measure rule precision before enabling lint rules as blocking gates.
+- Keep deterministic golden renders and replayable edit-operation histories so regressions can be reproduced from document state and actions, not only from final pixels.
+- Make agent workflows measurable by default: every substantial operation should be able to produce a render, structured diff, lint result, or comparison artifact.
+- Keep MCP, CLI, and SDK operations aligned so agent skills can run the same workflow in desktop, browser, CI, or headless file mode.
+
+### Tooling and API parity
+
+- Maintain a public tool/API reference that maps editor operations to CLI commands, MCP tools, SDK APIs, and Figma Plugin API-compatible eval usage.
+- Add coverage tests that detect when a core editor capability exists in the UI but is missing from CLI/MCP/SDK, or vice versa.
+- Keep tool outputs structured enough for agents to chain safely: node IDs, bounds, diffs, render artifacts, diagnostics, and machine-readable error details.
+- Improve deterministic CLI/MCP export and comparison tools for CI.
+- Add more design linting and migration helpers for batch `.fig` and `.pen` workflows.
+- Make `.pen` a first-class editable save target across app, CLI, MCP, and SDK workflows rather than an import-only or automation-specific format.
+- Extend HTML, CSS, Tailwind, and JSX support from editable import toward URL-based website capture, direct JSX paste/edit workflows, and component-aware design↔code updates that preserve intentional code structure instead of regenerating whole files.
+- Provide an adapter contract for additional design sources such as Stitch and Pixso, prioritizing formats with documented or testable semantics over brittle UI scraping.
+- Package desktop-side MCP integration so local agent workflows do not require global installs.
+
+### Performance and scale
+
+- Incremental layout and render invalidation for large documents.
+- Better renderer profiling surfaces for slow nodes, effects, masks, and imported files.
+- Smarter raster/retained caching that preserves fidelity during zoom and pan.
+
+### Interactive shader layers
+
+- Add Unicorn Studio-style shader scenes as first-class design layers: animated gradients, particles, noise fields, metaballs, lighting, displacement, and pointer-reactive backgrounds.
+- Provide a preset-first editor for common generative visuals before exposing raw shader code.
+- Support timeline and interaction inputs such as time, pointer position, scroll, layer bounds, colors, variables, and imported image textures.
+- Render shader layers through CanvasKit/WebGL while keeping deterministic raster export for PNG/JPG/WEBP and thumbnails.
+- Store shader layer configuration in OpenPencil documents and export graceful fallbacks when a target format cannot preserve the live effect.
+
+## Later
+
+### SDK and embedded editor
+
+- Expand the documented Vue SDK and core package platform with complete example applications for custom editor shells, embedded design surfaces, and automation-specific UIs.
+- Provide maintained examples for read-only previews, editable canvases, design review surfaces, and agent-controlled editors.
+- Ship an official VS Code/Cursor extension ([#81](https://github.com/open-pencil/open-pencil/issues/81)) for previewing and opening `.fig`/`.pen` documents, connecting to the running editor, invoking CLI/MCP workflows, handing selections between code and canvas, and navigating between generated code and design nodes. Reuse the app, SDK, and automation bridge rather than implementing a second editor inside the extension.
+- Define public API stability and migration expectations across the reusable npm packages.
+- Keep the renderer, editor core, and tool registry framework-agnostic enough for headless and embedded use.
+
+### Product depth
+
+- Prototyping: frame connections, triggers, overlays, transitions, preview mode, and AI/JSX-authorable interaction definitions.
+- Motion: reusable code-authored animation presets, timelines, easing, and deterministic playback/export that compose with prototype interactions and shader inputs.
+- Tables and data grids: structured rows, columns, headers, resizing, merged cells, and normal scene nodes inside cells instead of drawing tables as unrelated rectangles.
+- Comments: pins, threads, resolution state, and collaboration-aware display.
+- Extend shared libraries beyond the existing publish/consume/update workflow for components, styles, and variable collections to governance, usage analytics, and inserting styles and variables without a component.
+- Platform asset libraries: use licensed system-native and third-party icon sources, including SF Symbols where platform and redistribution rules allow, alongside the existing Iconify/Lucide workflow.
+- Figma Slides (`.deck`) interoperability: import/export, slide editing, presentation, speaker notes, and filmstrip workflows. This ranks below core Figma Design fidelity, reliability, Cloud/self-hosting, and international-text work.
+- Platform polish: Windows code signing, PWA support, packaged updater improvements, and desktop-side MCP bundling.
+
+## Non-goals
+
+- Mandatory accounts or a cloud-only document model. OpenPencil Cloud, self-hosted backends, and user-owned remote storage must remain optional alongside local files.
+- A hosted service that requires OpenPencil to proxy users' AI provider keys; AI and media integrations remain BYOK even when a backend provides identity, sync, or collaboration.
+- Read-only automation surfaces that cannot modify documents.
+- Feature work that sacrifices `.fig` import/export fidelity for convenience.
+
+This section tracks OpenPencil's current compatibility with Figma Design features. It is based on Figma's public Help Center feature areas and the current OpenPencil scene graph, Kiwi import/export, CanvasKit renderer, UI panels, CLI, and MCP tools.
+
+Legend:
+
+- **✅ Supported** — implemented for common files and expected to work directly.
+- **◐ Partial** — implemented for important cases, but missing parity, UI, or edge-case behavior.
+- **↩ Round-trip only** — imported/preserved/exported for `.fig` fidelity, but not rendered or editable as a first-class OpenPencil feature.
+- **— Not supported** — not currently modeled or intentionally out of scope.
+
+Support tiers used for prioritization:
+
+1. **Visual fidelity** — fields that change pixels in normal design exports. These get real Figma oracle fixtures, renderer tests, and visual metrics first.
+2. **Round-trip fidelity** — fields that should survive read → write → Figma import but do not need OpenPencil UI/rendering yet. These need raw-preservation and invalidation tests.
+3. **Product/runtime systems** — prototypes, libraries, FigJam, Slides, Dev Mode, CMS/AI, and media timelines. These stay schema-only or raw-preserved until OpenPencil has matching product concepts.
+4. **Unsafe/internal metadata** — fields that can corrupt Figma import or overwrite user edits when stale. These are filtered or preserved only with fixture evidence.
+
+## Official Figma feature areas
+
+Figma's design documentation groups features into these areas:
+
+- Layers, frames, groups, sections, shape layers, text, vectors, and boolean operations.
+- Fills, gradients, images, patterns, blend modes, strokes, effects, corner radius, and corner smoothing.
+- Auto layout: vertical, horizontal, wrap, grid, padding, gap, hug/fill/fixed/min/max, and ignore auto layout.
+- Components, instances, variants, component properties, slots, libraries, and library updates.
+- Variables: color, number, string, boolean, collections, modes, aliases, scopes, and prototype variables.
+- Prototyping: flows, hotspots, triggers, actions, overlays, smart animate, easing, conditionals, expressions, and variable actions.
+- Dev Mode: inspect, measurements, annotations, Code Connect, dev resources, ready-for-dev states, and Figma MCP.
+- Collaboration/file workflows: comments, version history, thumbnails, branches, library publishing, and multiplayer metadata.
+
+## Figma compatibility matrix
+
+| Area                                                 | Import | Render | UI edit | Export round-trip | CLI/MCP | Notes                                                                                                                                                                                                                                              |
+| ---------------------------------------------------- | -----: | -----: | ------: | ----------------: | ------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pages / canvases                                     |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Multi-page documents and per-page viewport are supported.                                                                                                                                                                                          |
+| Frames                                               |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Includes clipping and auto-layout container behavior.                                                                                                                                                                                              |
+| Groups                                               |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Grouping preserves visual positions.                                                                                                                                                                                                               |
+| Sections                                             |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Section rendering and title pills are OpenPencil-specific approximations.                                                                                                                                                                          |
+| Rectangles / rounded rectangles                      |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Per-corner radii and smoothed corners render for fills, strokes, clips, masks, and effects.                                                                                                                                                        |
+| Ellipses / arcs                                      |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | `arcData` renders/exports; no full inspector controls.                                                                                                                                                                                             |
+| Lines                                                |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Stroke caps, joins, dashes, alignment, and miter limits render and have inspector controls.                                                                                                                                                       |
+| Polygons / stars                                     |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | `pointCount` and `starInnerRadius` modeled.                                                                                                                                                                                                        |
+| Text                                                 |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Case, justification, vertical alignment, truncation/max lines, common OpenType features, and derived Figma glyph fallback are supported; uncommon typography metadata remains round-trip only.                                                                                                                                                                             |
+| Vectors / vector networks                            |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Vector edit support exists; Figma Draw tools are not fully replicated.                                                                                                                                                                             |
+| Boolean operations                                   |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Figma `BOOLEAN_OPERATION` nodes import/export as boolean operations; inspector editing remains limited.                                                                                                                                            |
+| Components                                           |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Component metadata, descriptions, links, and publish fields mostly round-trip.                                                                                                                                                                     |
+| Component sets / variants                            |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Multidimensional variant definitions and common instance properties are editable; broader Figma-specific property parity remains incomplete.                                                                                                                                                                        |
+| Instances / overrides                                |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Component-property refs and typed assignments are modeled and editable; raw symbol overrides and derived data remain preserved for fidelity.                                                                                                                                                                           |
+| Slots                                                |      ✅ |      ✅ |       ✅ |                 ✅ |       ✅ | Slot properties, settings, and instance slot content import, render, and round-trip. The editor creates, configures, and removes slots on main components and fills them in instances; scripts do the same through `createSlot()`, `resetSlot()`, and `limitViolations`. |
+| Connectors                                           |      ◐ |      ◐ |       — |                 ◐ |       ◐ | Type exists, but Figma connector semantics are weak.                                                                                                                                                                                               |
+| Shape-with-text / FigJam shapes                      |      ◐ |      ◐ |       — |                 ◐ |       ◐ | Type exists, but not a full FigJam feature implementation.                                                                                                                                                                                         |
+| Slices                                               |      ◐ |      — |       ◐ |                 ◐ |      ✅ | Slice-like export regions exist via tooling, not as true Figma slice nodes.                                                                                                                                                                        |
+| FigJam / Slides / Code / CMS / Buzz node families    |      ↩ |      — |       — |                 ↩ |       — | Current Kiwi schema recognizes many newer Figma node families (`TABLE`, `SLIDE`, `CODE_COMPONENT`, `CMS_RICH_TEXT`, `REPEATER`, `WEBPAGE`, etc.), but OpenPencil only preserves/round-trips them where safe; they are not first-class scene nodes. |
+| Solid fills                                          |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Color variables supported for common fill cases.                                                                                                                                                                                                   |
+| Gradients                                            |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Linear/radial/angular/diamond support; Figma edge cases may differ.                                                                                                                                                                                |
+| Image fills                                          |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Fill/fit/crop/tile support exists; imported crop/tile affine transforms are applied, but exact Figma parity is still partial.                                                                                                                      |
+| Pattern / noise / custom fills                       |     ✅ |      ◐ |       — |                ✅ |       — | Schema metadata imports/exports; Figma pattern fills with a referenced source node render as repeated source tiles with scale, spacing, alignment, and basic hex offsets. Noise/custom paints still render with a solid fallback pending real paint payload samples; Figma-authored noise/texture/glass effect payloads are captured separately. |
+| Video/GIF/media fills                                |      ↩ |      — |       — |                 ↩ |       — | Kiwi schema includes media paint/export enums, but OpenPencil has no video/GIF playback or media layer support.                                                                                                                                    |
+| Layer/fill/effect blend modes                        |     ✅ |      ◐ |      ✅ |                ✅ |      ✅ | Appearance, fill, and effect controls are exposed; Canvas applies common modes, while Figma isolation edge cases remain partial.                                                                                                                                        |
+| Opacity                                              |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Node opacity uses save layers in the renderer.                                                                                                                                                                                                     |
+| Strokes                                              |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Weight, alignment, dashes, and side weights are supported.                                                                                                                                                                                         |
+| Stroke caps / joins / miter limit                    |     ✅ |     ✅ |       ✅ |                ✅ |      ✅ | Inspector controls support mixed cap/join/miter editing; CanvasKit rendering and `.fig` roundtrips preserve miter limits.                                                                                                                                                                                    |
+| Effects: shadows and blurs                           |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | `showShadowBehindNode` is rendered but not exposed in UI.                                                                                                                                                                                          |
+| Fill / stroke / effect styles                        |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Imported local definitions are modeled and selectable with undo-safe detach; creating and publishing styles still needs a style manager.                                                                                                                                                                                                            |
+| Corner radius                                        |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Uniform and independent radii supported.                                                                                                                                                                                                           |
+| Corner smoothing                                     |     ✅ |     ✅ |       ✅ |                ✅ |      ✅ | The inspector supports mixed smoothing percentages with undo; uniform and independent-radius corners render, while exact Figma parity still needs broader fixture tuning.                                                                                                         |
+| Masks                                                |     ✅ |      ◐ |       — |                ✅ |      ✅ | Figma schema `mask`, `maskType`, and `maskIsOutline` fields import and export; common sibling alpha/vector/luminance mask stacks render, including consecutive mask layers. UI controls and deeper Figma edge cases remain incomplete.             |
+| Auto layout: vertical/horizontal                     |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Yoga-backed layout.                                                                                                                                                                                                                                |
+| Auto layout: wrap                                    |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | UI toggle exists.                                                                                                                                                                                                                                  |
+| Auto layout: grid                                    |     ✅ |      ◐ |       ◐ |                ✅ |      ✅ | CSS-grid-like support is partial; newer schema fields for grid child alignment and auto tracks are not fully exposed.                                                                                                                              |
+| Padding / gaps / alignment                           |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Common flex controls are exposed.                                                                                                                                                                                                                  |
+| Hug / fill / fixed sizing                            |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Min/max support is partial in UI.                                                                                                                                                                                                                  |
+| Ignore auto layout / absolute positioning            |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Mode is modeled; UI coverage is partial.                                                                                                                                                                                                           |
+| Strokes included in layout                           |     ✅ |      ◐ |       — |                ✅ |      ✅ | Stored/exported and used in layout paths, but no obvious panel control.                                                                                                                                                                            |
+| Reverse z-index / align-content                      |     ✅ |      ◐ |       — |                ✅ |      ✅ | Modeled and exported; UI is limited.                                                                                                                                                                                                               |
+| Constraints                                          |     ✅ |      ◐ |      ✅ |                ✅ |      ✅ | Horizontal and vertical pin, center, stretch, and scale modes are editable; imported edge-case parity remains partial.                                                                                                                             |
+| Layout grids / guides                                |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Layout-grid geometry and page/frame guides are editable, including guide creation, movement, duplication, transfer, and removal. Full grid-style management remains incomplete.                                                         |
+| Text styles                                          |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Imported local text styles are modeled, selectable, and detachable; authoring and publishing style definitions still needs a style manager.                                           |
+| Rich style runs                                      |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Import/render/export support; editing mixed runs is partial.                                                                                                                                                                                       |
+| Text auto resize                                     |     ✅ |     ✅ |       ◐ |                ✅ |      ✅ | Used by renderer/layout; UI does not expose every mode.                                                                                                                                                                                            |
+| Text truncation / max lines                          |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Ending truncation and maximum-line controls are available in the inspector.                                                                                                                                                                       |
+| Text case                                            |     ✅ |      ◐ |      ✅ |                ✅ |      ✅ | Original, upper, lower, and title case are editable; broader render parity still needs fixtures.                                                                                                                                                  |
+| Vertical text alignment                              |     ✅ |      ◐ |      ✅ |                ✅ |      ✅ | Top, center, and bottom alignment are editable; imported edge-case parity needs more coverage.                                                                                                                                                    |
+| Justified text                                       |     ✅ |      ◐ |      ✅ |                ✅ |      ✅ | Justification is exposed in the typography inspector; render parity remains partial.                                                                                                                                                              |
+| Font variations / OpenType features                  |     ✅ |     ✅ |       — |                ✅ |       — | Imported `fontVariations`, common ligature/caps/numeric OpenType fields, and raw `toggledOnOTFeatures` / `toggledOffOTFeatures` are applied to CanvasKit text styles and exported; UI controls are not exposed.                                    |
+| Variables: collections/modes/aliases                 |     ✅ |      ◐ |       ◐ |                ✅ |      ✅ | Color/number/string/boolean model exists; inspector coverage is still incomplete.                                                                                                                                                                  |
+| Variables bound to fills/strokes                     |     ✅ |     ✅ |      ✅ |                ✅ |      ✅ | Common color bindings render and edit.                                                                                                                                                                                                             |
+| Variables bound to text/layout/visibility/effects    |      ◐ |      ◐ |       ◐ |                 ◐ |      ✅ | Text content and numeric layout bindings resolve on read; colour, numeric, text, and visibility bindings also re-resolve when a variable or mode changes, font family ones do not. Effect bindings are not modelled.                                                                                                                                                                                             |
+| Variables in prototypes / expressions / conditionals |      — |      — |       — |                 — |       — | Depends on prototype system, which is not implemented.                                                                                                                                                                                             |
+| Libraries / publish / update review                  |      ↩ |      — |       ◐ |                 ↩ |       — | Figma library metadata survives round-trip. OpenPencil supports its own component-library publishing, catalogs, revision previews, and linked-instance updates, not synchronization with Figma-hosted libraries.                                                                                                                                                                                         |
+| Prototype flows / starting points                    |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Prototype hotspots / triggers / actions              |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Prototype overlays / scroll-to                       |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Smart animate / easing / spring / duration           |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Interactive components                               |      — |      — |       — |                 — |       — | Figma's component-level prototype connections are not supported; OpenPencil's own behaviours make components run as Reka UI controls in preview.                                                                                                                                                                                           |
+| Dev Mode inspect / measurements / annotations        |      — |      ◐ |       ◐ |                 — |       ◐ | OpenPencil has CLI/MCP inspection and Option/Alt distance overlays, but not Figma Dev Mode annotations or its full UI.                                                                                                                                                                                      |
+| Code Connect / dev resources / ready-for-dev         |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Comments                                             |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Version history / branches                           |      — |      — |       — |                 — |       — | Not modeled.                                                                                                                                                                                                                                       |
+| Real-time collaboration                              |      — |     ✅ |      ✅ |                 — |       — | OpenPencil has its own P2P collaboration, not Figma-compatible metadata.                                                                                                                                                                           |
+
+## Raw Kiwi metadata coverage
+
+OpenPencil deliberately preserves many Figma/Kiwi fields even when they are not rendered or editable. These live under `SceneNode.source.fig` and are applied late during `.fig` export. A schema coverage test compares the current `fig.kiwi` `NodeChange` fields against modeled codec fields, raw-preserved fields, and intentionally schema-only metadata buckets so drift stays visible.
+
+| Field group                                                             | Import/export |   Render |  UI | Fidelity impact                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------- | ------------: | -------: | --: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source.fig.rawSize`                                                    |            ✅ | Indirect |   — | Preserves original Figma size for round-trip. Cleared when size is edited.                                                                                                                                                                                                                                                                              |
+| `source.fig.rawTransform`                                               |            ✅ | Indirect |   — | Preserves exact Figma transform. Cleared when transform is edited.                                                                                                                                                                                                                                                                                      |
+| `source.fig.rawNodeFields`                                              |            ✅ |    Mixed |   — | Late-applied to exported NodeChange for round-trip fidelity; modeled edits invalidate only matching stale raw fields, while unrelated prototype/library metadata survives. Raw-field and schema coverage tests guard preservation drift.                                                                                                                                                                                                                              |
+| `source.fig.layout`                                                     |            ✅ |       ✅ |   ◐ | Preserves original Figma stack metadata while using normalized layout fields.                                                                                                                                                                                                                                                                           |
+| `source.fig.symbolOverrides`                                            |            ✅ | Indirect |   — | Important for instance override fidelity.                                                                                                                                                                                                                                                                                                               |
+| `source.fig.componentPropAssignments`                                   |            ✅ | Indirect |   ◐ | Used for component property fidelity; not raw-editable.                                                                                                                                                                                                                                                                                                 |
+| `source.fig.derivedSymbolData`                                          |            ✅ | Indirect |   — | Critical for instance-derived geometry/layout/text.                                                                                                                                                                                                                                                                                                     |
+| `source.fig.derivedSymbolDataLayoutVersion`                             |            ✅ |        — |   — | Figma bookkeeping.                                                                                                                                                                                                                                                                                                                                      |
+| `source.fig.uniformScaleFactor`                                         |            ✅ | Indirect |   — | Important for scaled instances.                                                                                                                                                                                                                                                                                                                         |
+| Style IDs: fill/stroke/text/effect/grid                                 |             ↩ |        — |   — | Preserves style linkage for Figma, but OpenPencil has no style manager yet.                                                                                                                                                                                                                                                                             |
+| Component property refs/defs/specs                                      |            ✅ | Indirect |   ◐ | Text, boolean, and instance-swap properties, their links, and exposed nested instances (`propsAreBubbled`) are authored in the panel.                                                                                                                                                                                                                   |
+| State-group metadata                                                    |             ↩ |        — |   — | Preserved only.                                                                                                                                                                                                                                                                                                                                         |
+| Version/sort/publish/library metadata                                   |             ↩ |        — |   ◐ | Figma metadata is preserved; OpenPencil's component-library publish/update workflow uses its own stable asset identities and revision review.                                                                                                                                                                                                                                                                                           |
+| Variable and parameter consumption maps                                 |            ✅ |        ◐ |   ◐ | Filtered/preserved for safe round-trip; normalized bindings cover common cases.                                                                                                                                                                                                                                                                         |
+| Page fields: background, page type, guides                              |             ↩ |        ◐ |   ◐ | Background color, background paints, page type, and guides round-trip for imported pages. Normalized page/frame guides render as overlays and support undoable editing.                                                                                                                                                                                                         |
+| Text internals: `textData`, layout versions, font version, derived data |            ✅ |       ✅ |   — | Important for text fidelity; most internals are not editable. Imported derived text data, leading trim, decoration style, underline decoration paint/offset/thickness/skip-ink, semantic font metadata, and raw OpenType feature toggles are preserved for round-trip when safe; decoration style/thickness/color and leading trim now render through CanvasKit, and raster export bounds account for decoration overflow. |
+| `fontVariations`                                                        |            ✅ |       ✅ |   — | Variable font axes are imported, rendered, and exported for text nodes and style runs.                                                                                                                                                                                                                                                                  |
+| Raw paint/effect/vector/geometry payloads                               |            ✅ |       ✅ |   ◐ | Converted fields render; raw payloads preserve Figma import/export details, including mask, background paint, layout grid, export setting, and prototype interaction metadata where safe.                                                                                                                                                               |
+
+## Highest-priority visual gaps
+
+These are parsed or visible in Figma docs and most likely to cause visible differences in real design files:
+
+1. **Masks** — tune remaining exact Figma stack semantics beyond common alpha/vector/luminance and consecutive-mask paths. `tests/fixtures/figma-oracles/masks.json` records live Figma API values for alpha, vector, and luminance masks.
+2. **Corner smoothing** — expand Figma fixture comparisons and tune remaining stroke/effect edge cases.
+3. **Pattern/noise/custom fills** — tune first-class pattern rendering for nested/effectful pattern sources and exact Figma hex spacing. `tests/fixtures/figma-oracles/pattern-noise-custom-paints.json` captures a real async Figma `PATTERN` payload and Figma-authored noise/texture/glass effect payloads; real `NOISE` / `CUSTOM` paint payloads remain blocked on Figma-authored samples.
+4. **Variable-font and rich text fixtures** — broaden real-file coverage for variable axes, derived text data, leading trim, decoration style, underline offset/skip-ink, semantic font metadata, and raw OpenType feature metadata; `tests/fixtures/figma-oracles/rich-text-decoration.json` captures the first live Figma rich-text oracle.
+5. **Boolean operation editing** — improve inspector/tooling workflows for imported boolean-operation nodes.
+6. **Layout grids and guides** — broaden grid-style parity and Figma edge-case coverage; common grid geometry and page/frame guide editing are already supported.
+7. **Full component property and slot workflows** — support authoring, not just preserving imported payloads.
+8. **Prototype/media/interaction metadata** — schema now includes more interaction, media runtime, animation, and slide fields; start by preserving flows/connections/runtime metadata before building playback.
+
+## Code map
+
+| Concern                      | Files                                                                                                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Scene graph fields           | `packages/scene-graph/src/types.ts`                                                                            |
+| Source edit tracking         | `packages/scene-graph/src/source-metadata.ts`                                                                  |
+| `.fig` metadata policy       | `packages/fig/src/source-metadata.ts`                                                                           |
+| Kiwi import mapping          | `packages/fig/src/node-change/convert.ts`                                                                       |
+| Kiwi export mapping          | `packages/fig/src/node-change/export/node.ts`, `packages/fig/src/node-change/serialize.ts`                    |
+| Kiwi schema                  | `packages/kiwi/src/fig/schema/fig.kiwi`, `packages/core/tests/io/formats/fig/import/schema-coverage.test.ts`                   |
+| Renderer dispatch            | `packages/core/src/canvas/scene.ts`                                                                            |
+| Fills / images / gradients   | `packages/core/src/canvas/fills.ts`                                                                            |
+| Strokes                      | `packages/core/src/canvas/strokes.ts`                                                                          |
+| Effects / shadows            | `packages/core/src/canvas/shadows.ts`                                                                          |
+| Text rendering               | `packages/core/src/canvas/text.ts`, `packages/core/src/canvas/text-derived.ts`                                 |
+| Layout engine                | `packages/core/src/layout/**`                                                   |
+| Property panels              | `src/components/properties/**`, `packages/vue/src/controls/**`                                                 |
+| CLI                          | `packages/cli/src/index.ts`, `packages/cli/src/commands/**`                                                    |
+| MCP/tools                    | `packages/core/src/tools/**`, `packages/mcp/src/tool/registration.ts`                                          |

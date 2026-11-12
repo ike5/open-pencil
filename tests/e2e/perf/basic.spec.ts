@@ -8,10 +8,10 @@ const ITERATIONS = 200
 test.describe('Render performance', () => {
   let helper: CanvasHelper
 
-  test.beforeAll(async ({ browser }) => {
-    const page = await browser.newPage()
+  test.beforeAll(async ({ browser, baseURL }) => {
+    const page = await browser.newPage({ baseURL })
     helper = new CanvasHelper(page)
-    await page.goto('http://localhost:1420/?test&no-chrome')
+    await page.goto('/?test&no-chrome&no-rulers')
     await helper.waitForInit()
 
     await page.evaluate((count: number) => {
@@ -92,7 +92,7 @@ test.describe('Render performance', () => {
       const renderer = store.renderer
       if (!renderer) throw new Error('OpenPencil renderer not initialized')
 
-      function setupRenderer() {
+      const setupRenderer = () => {
         renderer.dpr = window.devicePixelRatio || 1
         renderer.panX = store.state.panX
         renderer.panY = store.state.panY
@@ -210,10 +210,10 @@ test.describe('Render performance', () => {
               }
             ]
           })
-          shadowIds.push(id)
+          shadowIds.push(id.id)
         }
 
-        function setupRenderer() {
+        const setupRenderer = () => {
           renderer.dpr = window.devicePixelRatio || 1
           renderer.panX = 0
           renderer.panY = -2000

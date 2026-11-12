@@ -1,0 +1,152 @@
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { assertPublishedReleaseArtifacts } from '#release/resume'
+import { isPrerelease } from '#release/version'
+import { isEqual } from 'es-toolkit'
+import * as v from 'valibot'
+
+import { isChromiumAsset } from '../chromium/catalog.ts'
+import { ARTIFACT_TRANSFER_TIMEOUT_MS, releaseCommands } from './commands.ts'
+import { createReleaseContext } from './context.ts'
+import { assertDraftReplacement, releaseChannelArgs, releaseSchema } from './draft.ts'
+import { digestFile } from './manifest.ts'
+
+const { identity, repository, version, paths } = createReleaseContext()
+const { git, github } = releaseCommands(paths.root)
+
+const releases = v
+  .parse(
+    v.array(v.array(releaseSchema)),
+    JSON.parse(await github(['api', '--paginate', '--slurp', `repos/${repository}/releases`]))
+  )
+  .flat()
+const release = releases.find((entry) => entry.tag_name === identity.tag)
+
+// Re-fetch the tag and peel annotated tags before any registry/release mutation.
+await git('fetch', 'origin', `refs/tags/${identity.tag}`)
+const actualCommit = await git('rev-parse', 'FETCH_HEAD^{commit}')
+const names = (await readdir(paths.output)).sort()
+assertDraftReplacement(release, names, actualCommit, identity)
+
+if (process.argv[2] === 'check') {
+  // npm versions already on the registry must be this tag's own, by provenance, and carry the
+  // registry's bytes (`release-packages resume` before assembly); publication then skips them.
+  await assertPublishedReleaseArtifacts(paths.root, {
+    repository,
+    tag: identity.tag,
+    commit: actualCommit
+  })
+
+  console.log('Draft, npm versions and immutable tag verified before publication')
+  process.exit(0)
+}
+
+if (process.argv[2] !== 'upload') throw new Error('Expected check or upload')
+
+if (!release) {
+  await github([
+    'release',
+    'create',
+    identity.tag,
+    '--repo',
+    repository,
+    '--draft',
+    '--verify-tag',
+    '--title',
+    identity.tag,
+    '--notes-file',
+    paths.notes,
+    ...releaseChannelArgs(version)
+  ])
+} else {
+  await github([
+    'release',
+    'edit',
+    identity.tag,
+    '--repo',
+    repository,
+    '--title',
+    identity.tag,
+    '--notes-file',
+    paths.notes,
+    ...releaseChannelArgs(version)
+  ])
+}
+
+// Every asset is replaced, never skipped merely because its name already exists.
+// GitHub has no atomic multi-asset upload. The release remains draft on failure.
+await github(
+  [
+    'release',
+    'upload',
+    identity.tag,
+    ...names.map((name) => join(paths.output, name)),
+    '--repo',
+    repository,
+    '--clobber'
+  ],
+  ARTIFACT_TRANSFER_TIMEOUT_MS
+)
+
+const remote = v.parse(
+  v.object({
+    isDraft: v.boolean(),
+    isPrerelease: v.boolean(),
+    assets: v.array(v.object({ name: v.string() }))
+  }),
+  JSON.parse(
+    await github([
+      'release',
+      'view',
+      identity.tag,
+      '--repo',
+      repository,
+      '--json',
+      'isDraft,isPrerelease,assets'
+    ])
+  )
+)
+const remoteNames = remote.assets
+  .map((asset) => asset.name)
+  .filter((name) => !isChromiumAsset(name))
+  .sort()
+
+if (!remote.isDraft || !isEqual(remoteNames, names)) {
+  throw new Error('Uploaded asset set mismatch')
+}
+if (remote.isPrerelease !== isPrerelease(version)) {
+  throw new Error(`Draft ${identity.tag} has the wrong pre-release flag`)
+}
+
+const temporary = await mkdtemp(join(tmpdir(), 'open-pencil-release-verify-'))
+
+try {
+  await github(
+    [
+      'release',
+      'download',
+      identity.tag,
+      '--repo',
+      repository,
+      '--dir',
+      temporary,
+      ...names.flatMap((name) => ['--pattern', name])
+    ],
+    ARTIFACT_TRANSFER_TIMEOUT_MS
+  )
+
+  for (const name of names) {
+    if (
+      (await digestFile(join(temporary, name))).sha256 !==
+      (await digestFile(join(paths.output, name))).sha256
+    ) {
+      throw new Error(`Uploaded digest mismatch: ${name}`)
+    }
+  }
+} finally {
+  await rm(temporary, { recursive: true, force: true })
+}
+
+console.log(`Draft ${identity.tag} contains only the verified assets from this run`)

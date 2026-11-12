@@ -1,78 +1,50 @@
 ---
 title: Komponenten
-description: Wiederverwendbare Komponenten, Instanzen, Komponenten-Sets, Overrides und Live-Synchronisation in OpenPencil.
+description: Wiederverwendbare Komponenten, Instanzen, Komponentensätze, Überschreibungen und Bibliotheken.
 ---
 
 # Komponenten
 
-Komponenten sind wiederverwendbare Design-Elemente. Bearbeiten Sie die Hauptkomponente und alle Instanzen aktualisieren sich automatisch.
+Komponenten sind wiederverwendbare Designelemente. Änderungen an der Hauptkomponente werden an ihre Instanzen weitergegeben.
+
+## Komponenten finden
+
+Der Bereich **Assets** zeigt lokale Komponenten und aktivierte Bibliotheken. Suche, Raster- und Listenansicht sowie Einfügen per Klick, <kbd>Enter</kbd> oder Ziehen werden unterstützt. Heruntergeladene Bibliotheksversionen bleiben offline verfügbar.
 
 ## Komponente erstellen
 
-Wählen Sie einen Frame oder eine Gruppe und drücken Sie <kbd>⌥</kbd><kbd>⌘</kbd><kbd>K</kbd> (Strg + Alt + K). Der Knoten wird zu einer wiederverwendbaren Komponente.
+Rahmen oder Gruppe auswählen und <kbd>⌥</kbd><kbd>⌘</kbd><kbd>K</kbd> drücken. Unter Windows und Linux: <kbd>Strg</kbd><kbd>Alt</kbd><kbd>K</kbd>.
 
-Komponenten zeigen ein lila Label mit Diamant-Symbol.
+## Komponentensätze und Varianten
 
-## Komponenten-Sets
+Mindestens zwei Komponenten auswählen und <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> drücken. Varianten können mehrere Merkmale wie `Size=Small`, `State=Hover` und `Theme=Dark` besitzen. Nicht jede Kombination muss vorhanden sein. Die Variante oben links dient als Standard und Ersatz.
 
-Wählen Sie zwei oder mehr Komponenten und drücken Sie <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> (Shift + Strg + K), um sie zu einem Komponenten-Set zu kombinieren — ein Container mit gestricheltem lila Rand.
+## Komponenteneigenschaften
 
-## Instanzen erstellen
+Unterstützt werden Text, boolesche Sichtbarkeit und Instanztausch. Eine Eigenschaft kann mit einem untergeordneten Feld verbunden und anschließend in einer Instanz verändert werden, ohne die Verbindung zu lösen.
 
-Rechtsklick auf eine Komponente → **Instanz erstellen**. Die Instanz erscheint 40 px rechts von der Quellkomponente.
+Verknüpft wird mit der Raute-Schaltfläche dort, wo das Feld steht: **Typografie** für den Textinhalt, **Darstellung** für die Sichtbarkeit und der Kopf einer Instanz für die ausgetauschte Komponente. Die Hauptkomponente listet ihre **Eigenschaften**; ein Klick öffnet Name, Standardwert und verknüpfte Ebenen. Über **+ → Verschachtelte Instanzen** zeigen Instanzen der Komponente auch die Eigenschaften einer verschachtelten Instanz, wie in Figma.
 
-## Instanz lösen
+## Bibliotheken
 
-Wählen Sie eine Instanz und drücken Sie <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> (Strg + Alt + B). Die Instanz wird zu einem regulären Frame ohne Verbindung zur Komponente.
+Bibliotheken veröffentlichen Komponenten als unveränderliche Versionen. In **Assets → Manage libraries → Publish library** werden eine dauerhafte Kennung und ein Name festgelegt und die zu veröffentlichenden Änderungen ausgewählt.
 
-## Zur Hauptkomponente
+Aktivierte Bibliotheken erscheinen bei den lokalen Komponenten. Veröffentlichte Definitionen sind schreibgeschützt; Instanzen und Überschreibungen bleiben bearbeitbar.
 
-Rechtsklick auf eine Instanz → **Zur Hauptkomponente**. Der Editor navigiert zur Hauptkomponente und wählt sie aus.
+Unter **Updates** können aktuelle und neue Instanzen verglichen und einzeln, pro Ressource, pro Seite oder im gesamten Dokument aktualisiert werden. Kompatible Eigenschaften bleiben erhalten. Fehlt eine Variante, wird vor der Bestätigung die Ersatzvariante angezeigt.
 
-## Live-Synchronisation
+Heruntergeladene Versionen werden lokal gespeichert. Verbindungen und benötigte Definitionen werden in `.fig` eingebettet, sodass das Dokument auch ohne entfernte Bibliothek geöffnet werden kann.
 
-Wenn Sie eine Komponente bearbeiten, aktualisieren sich alle Instanzen automatisch. Synchronisierte Eigenschaften:
+## Instanzen
 
-- Breite und Höhe
-- Füllungen, Konturen und Effekte
-- Deckkraft und Eckenradien
-- Layout-Eigenschaften
-- Inhalte beschneiden
+Über das Kontextmenü kann eine Instanz erstellt, von ihrer Komponente gelöst oder die Hauptkomponente geöffnet werden.
 
-## Overrides
-
-Instanzen können bestimmte Eigenschaften überschreiben, ohne die Synchronisationsverbindung zu unterbrechen. Überschriebene Eigenschaften werden bei der Synchronisation übersprungen.
-
-### Überschreibbare Eigenschaften
-
-Name, Text, Schriftgröße, Schriftstärke, Schriftfamilie sowie alle visuellen und Layout-Eigenschaften.
-
-### Neue Kinder
-
-Wenn Sie der Komponente ein Kind hinzufügen, erhalten alle Instanzen automatisch eine geklonte Kopie.
-
-## Hit-Testing
-
-Komponenten und Instanzen sind opake Container — Klicken wählt die Komponente selbst. **Doppelklick** zum Betreten und Kinder auswählen.
-
-## Visuelles Erscheinungsbild
-
-| Element | Darstellung |
-|---------|------------|
-| Komponenten-Label | Lila mit Diamant-Symbol |
-| Instanz-Label | Lila mit Diamant-Symbol |
-| Komponenten-Set-Rand | Gestrichelt lila |
+Änderungen an der Hauptkomponente aktualisieren Breite, Höhe, Füllungen, Konturen, Effekte, Deckkraft, Eckenradien, Anordnung und Beschnitt der Instanzen. Überschriebene Werte bleiben erhalten.
 
 ## Tastenkürzel
 
-| Aktion | Mac | Windows / Linux |
-|--------|-----|-----------------|
-| Komponente erstellen | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>K</kbd> | Strg + <kbd>Alt</kbd> + <kbd>K</kbd> |
-| Komponenten-Set erstellen | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> | <kbd>Shift</kbd> + <kbd>Strg</kbd> + K |
-| Instanz lösen | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> | Strg + <kbd>Alt</kbd> + <kbd>B</kbd> |
-
-## Tipps
-
-- Textbearbeitung innerhalb einer Instanz erstellt ein Override.
-- Verwenden Sie Komponenten-Sets für Varianten (z.B. Button-Zustände).
-- Doppelklicken Sie in eine Komponente, bevor Sie ihre Kinder bearbeiten.
+| Aktion | macOS | Windows / Linux |
+|--------|-------|-----------------|
+| Komponente erstellen | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>K</kbd> | <kbd>Strg</kbd><kbd>Alt</kbd><kbd>K</kbd> |
+| Komponentensatz erstellen | <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> | <kbd>Shift</kbd><kbd>Strg</kbd><kbd>K</kbd> |
+| Instanz lösen | <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> | <kbd>Strg</kbd><kbd>Alt</kbd><kbd>B</kbd> |

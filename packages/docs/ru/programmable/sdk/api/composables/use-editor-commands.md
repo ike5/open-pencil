@@ -1,24 +1,24 @@
 ---
 title: useEditorCommands
-description: Создание меню, действий и командного UI поверх редактора.
+description: Создание меню и других элементов интерфейса на основе команд редактора.
 ---
 
 # useEditorCommands
 
-`useEditorCommands()` предоставляет командно-ориентированный слой поверх действий редактора.
+`useEditorCommands()` предоставляет единый интерфейс для выполнения команд редактора.
 
-Полезен при создании:
+Он пригодится при создании:
 
 - меню приложения
 - контекстных меню
-- тулбаров
-- адаптеров клавиатурных команд
+- toolbars;
+- обработчиков сочетаний клавиш;
 - подменю перемещения между страницами
 
 ## Использование
 
 ```ts
-import { useEditorCommands } from '@open-pencil/vue'
+import { useEditorCommands } from '@open-pencil/vue/editor/commands'
 
 const { commands, menuItem, runCommand, moveSelectionToPage, otherPages } = useEditorCommands()
 ```

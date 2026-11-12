@@ -1,98 +1,110 @@
 ---
-title: Przeglądanie plików
-description: Przeglądaj drzewa węzłów, szukaj po nazwie lub typie i sprawdzaj właściwości z terminala.
+title: Przeglądanie dokumentów
+description: Drzewo obiektów, wyszukiwanie według nazwy i typu oraz właściwości z terminala.
 ---
 
-# Przeglądanie plików
+# Przeglądanie dokumentów
 
-CLI pozwala eksplorować pliki `.fig` bez otwierania edytora. Każde polecenie działa również na żywej aplikacji — wystarczy pominąć argument pliku.
+CLI pozwala analizować dokumenty projektu bez uruchamiania edytora. Te same polecenia działają z otwartą aplikacją komputerową, jeśli nie podasz pliku.
 
 ::: tip Instalacja
+
 ```sh
+npm install -g @open-pencil/cli
+# albo
 bun add -g @open-pencil/cli
-# lub
-brew install open-pencil/tap/open-pencil
 ```
+
 :::
 
-## Informacje o dokumencie
+## Informacje ogólne
 
-Szybki przegląd — liczba stron, łączna liczba węzłów, użyte czcionki, rozmiar pliku:
-
-```sh
-open-pencil info design.fig
-```
-
-## Drzewo węzłów
-
-Wyświetl pełną hierarchię węzłów:
+Liczba stron i obiektów, używane czcionki oraz rozmiar pliku:
 
 ```sh
-open-pencil tree design.fig
+openpencil info design.fig
 ```
 
-```
-[0] [page] "Getting started" (0:46566)
-  [0] [section] "" (0:46567)
-    [0] [frame] "Body" (0:46568)
-      [0] [frame] "Introduction" (0:46569)
-        [0] [frame] "Introduction Card" (0:46570)
-          [0] [frame] "Guidance" (0:46571)
-```
-
-## Wyszukiwanie węzłów
-
-Szukaj po typie:
+## Drzewo obiektów
 
 ```sh
-open-pencil find design.fig --type TEXT
+openpencil tree design.fig
 ```
 
-Szukaj po nazwie:
+## Wyszukiwanie obiektów
+
+Według typu:
 
 ```sh
-open-pencil find design.fig --name "Button"
+openpencil find design.fig --type TEXT
 ```
 
-Obie flagi można łączyć, aby zawęzić wyniki.
-
-## Szczegóły węzła
-
-Sprawdź wszystkie właściwości konkretnego węzła po jego ID:
+Według nazwy:
 
 ```sh
-open-pencil node design.fig --id 1:23
+openpencil find design.fig --name "Button"
 ```
 
-## Strony
+## Zapytania XPath
 
-Wylistuj wszystkie strony w dokumencie:
+Selektory XPath wyszukują obiekty według typu, atrybutów i położenia w drzewie:
 
 ```sh
-open-pencil pages design.fig
+openpencil query design.fig "//FRAME"
 ```
-
-## Zmienne
-
-Wylistuj zmienne projektowe i ich kolekcje:
 
 ```sh
-open-pencil variables design.fig
+openpencil query design.fig "//TEXT"                    # Wszystkie obiekty tekstowe
+openpencil query design.fig "//COMPONENT"               # Wszystkie komponenty
+openpencil query design.fig "//INSTANCE"                # Wszystkie egzemplarze
+openpencil query design.fig "//FRAME[@width < 300]"     # Ramki węższe niż 300 px
+openpencil query design.fig "//*[@cornerRadius > 0]"    # Obiekty z zaokrąglonymi narożnikami
+openpencil query design.fig "//*[@visible = false]"     # Ukryte obiekty
+openpencil query design.fig "//SECTION//TEXT"            # Tekst wewnątrz sekcji
 ```
 
-## Tryb żywej aplikacji
+Nazwy dostępnych atrybutów, takie jak `fontSize`, `layoutMode` i `strokeWeight`, pozostają zgodne z API.
 
-Gdy aplikacja desktopowa jest uruchomiona, pomiń argument pliku — CLI łączy się przez RPC i operuje na żywym płótnie:
+## Właściwości obiektu
 
 ```sh
-open-pencil tree              # przeglądaj żywy dokument
-open-pencil eval -c "..."     # odpytuj edytor
+openpencil node design.fig --id 1:23
 ```
+
+## Strony i zmienne
+
+```sh
+openpencil pages design.fig
+openpencil variables design.fig
+```
+
+## Praca z otwartą aplikacją
+
+Jeśli aplikacja komputerowa jest uruchomiona, nie podawaj ścieżki pliku. CLI połączy się przez RPC z otwartym dokumentem:
+
+```sh
+openpencil documents list
+openpencil tree
+openpencil tree --document-id tab-123 --page-id 0:1
+openpencil eval --document-id tab-123 --page-id 0:1 -c "..."
+```
+
+W procesach automatycznych najpierw wywołaj `openpencil documents list --json`, a potem jawnie przekazuj `--document-id` i `--page-id`. Otwieranie, zapisywanie, przełączanie i zamykanie dokumentów, cofanie zmian, ustawienia i wywoływanie dowolnych narzędzi edytora opisuje [Controlling the App](/programmable/cli/app-control).
+
+## Kontrola jakości
+
+Sprawdzanie nazw, układu, struktury i dostępności:
+
+```sh
+openpencil lint design.fig
+openpencil lint design.pen --preset strict
+openpencil lint design.fig --rule color-contrast
+openpencil lint design.fig --list-rules
+openpencil lint design.fig --fix -o fixed.fig
+```
+
+Wyjście `--json` zawiera dla każdego komunikatu dane `fix` i `suggestions`. Opcja `--fix` stosuje bezpieczne poprawki — wiąże kolory z pasującą zmienną koloru i zaokrągla geometrię do pełnych pikseli — a wynik zapisuje w pliku `.fig` podanym w `-o`.
 
 ## Wyjście JSON
 
-Wszystkie polecenia obsługują `--json` dla wyjścia w formacie do odczytu maszynowego — przekieruj do `jq`, zasilaj skrypty CI lub przetwarzaj innymi narzędziami:
-
-```sh
-open-pencil tree design.fig --json | jq '.[] | .name'
-```
+Wszystkie polecenia obsługują `--json`. Wynik można przekazać do `jq`, CI albo innego programu.

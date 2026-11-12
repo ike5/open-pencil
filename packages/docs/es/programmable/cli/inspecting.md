@@ -1,98 +1,92 @@
 ---
-title: Inspeccionar Archivos
-description: Navega árboles de nodos, busca por nombre o tipo, y examina propiedades desde la terminal.
+title: Examinar archivos con la CLI
+description: Consultar páginas, objetos, jerarquías, variables y formatos de documentos `.fig`.
 ---
 
-# Inspeccionar Archivos
+# Examinar archivos con la CLI
 
-El CLI te permite explorar archivos `.fig` sin abrir el editor. Cada comando también funciona con la aplicación en vivo — simplemente omite el argumento de archivo.
-
-::: tip Instalar
-```sh
-bun add -g @open-pencil/cli
-# o
-brew install open-pencil/tap/open-pencil
-```
-:::
-
-## Información del Documento
-
-Obtén un resumen rápido — cantidad de páginas, nodos totales, fuentes utilizadas, tamaño del archivo:
+La CLI permite conocer la estructura de un archivo sin abrir el editor.
 
 ```sh
-open-pencil info design.fig
+bun open-pencil info design.fig
+bun open-pencil pages design.fig
+bun open-pencil tree design.fig
 ```
 
-## Árbol de Nodos
+## Resumen
 
-Imprime la jerarquía completa de nodos:
+`info` muestra formato, versión, número de páginas y objetos, tamaño del lienzo, fuentes, variables y metadatos principales.
+
+## Páginas y árbol
+
+`pages` enumera las páginas. `tree` imprime la jerarquía y puede limitar profundidad, página o número de resultados.
 
 ```sh
-open-pencil tree design.fig
+bun open-pencil tree design.fig --depth 3
 ```
 
-```
-[0] [page] "Getting started" (0:46566)
-  [0] [section] "" (0:46567)
-    [0] [frame] "Body" (0:46568)
-      [0] [frame] "Introduction" (0:46569)
-        [0] [frame] "Introduction Card" (0:46570)
-          [0] [frame] "Guidance" (0:46571)
-```
+## Buscar objetos
 
-## Buscar Nodos
-
-Buscar por tipo:
+`find` busca por nombre, tipo u otras condiciones.
 
 ```sh
-open-pencil find design.fig --type TEXT
+bun open-pencil find design.fig --name Button
+bun open-pencil find design.fig --type TEXT
 ```
 
-Buscar por nombre:
+## Ver un objeto
+
+`node` muestra las propiedades del identificador indicado, incluidas geometría, estilo, relaciones y datos específicos de su tipo.
 
 ```sh
-open-pencil find design.fig --name "Button"
-```
-
-Ambos flags se pueden combinar para refinar aún más los resultados.
-
-## Detalles del Nodo
-
-Inspecciona todas las propiedades de un nodo específico por su ID:
-
-```sh
-open-pencil node design.fig --id 1:23
-```
-
-## Páginas
-
-Lista todas las páginas del documento:
-
-```sh
-open-pencil pages design.fig
+bun open-pencil node design.fig 12:34
 ```
 
 ## Variables
 
-Lista las variables de diseño y sus colecciones:
+`variables` enumera colecciones, modos, tipos y valores.
 
 ```sh
-open-pencil variables design.fig
+bun open-pencil variables design.fig
 ```
 
-## Modo Aplicación en Vivo
+## Formatos
 
-Cuando la aplicación de escritorio está en ejecución, omite el argumento de archivo — el CLI se conecta vía RPC y opera sobre el lienzo en vivo:
+`formats` lista los formatos de documento registrados y sus capacidades de lectura y escritura.
+
+## Aplicación en ejecución
+
+Cuando la aplicación de escritorio está abierta, omite el archivo: la CLI se conecta por RPC y opera sobre el lienzo en vivo:
 
 ```sh
-open-pencil tree              # inspeccionar el documento en vivo
-open-pencil eval -c "..."     # consultar el editor
+bun open-pencil documents list    # lista los ID de documentos y páginas abiertos
+bun open-pencil tree              # inspecciona el documento activo
+bun open-pencil tree --document-id tab-123 --page-id 0:1
+bun open-pencil eval --document-id tab-123 --page-id 0:1 -c "..."
 ```
+
+En flujos con agentes, usa `bun open-pencil documents list --json` y pasa `--document-id` y `--page-id` de forma explícita en lugar de depender de la pestaña o página visible. Para abrir, guardar, cambiar y cerrar documentos, deshacer, modificar ajustes o llamar a cualquier herramienta del editor, consulta [Controlar la aplicación](/programmable/cli/app-control).
+
+## Lint
+
+`lint` revisa un diseño con reglas de accesibilidad y consistencia.
+
+```sh
+bun open-pencil lint design.fig
+bun open-pencil lint design.pen --preset strict
+bun open-pencil lint design.fig --rule color-contrast
+bun open-pencil lint design.fig --list-rules
+bun open-pencil lint design.fig --fix -o fixed.fig
+```
+
+Usa `--json` para una salida legible por máquinas; cada mensaje incluye su `fix` y sus `suggestions` como datos. `--fix` aplica las correcciones seguras —enlazar los colores a la variable de color que coincide y redondear la geometría a píxeles enteros— y escribe el resultado en el archivo `.fig` indicado con `-o`.
 
 ## Salida JSON
 
-Todos los comandos soportan `--json` para salida legible por máquinas — envía a `jq`, alimenta scripts de CI, o procesa con otras herramientas:
+Los comandos de consulta admiten `--json`, apropiado para `jq`, CI y programas que necesiten una salida estable y legible por máquinas.
 
 ```sh
-open-pencil tree design.fig --json | jq '.[] | .name'
+bun open-pencil pages design.fig --json | jq '.[].name'
 ```
+
+Usa `bun open-pencil --help` o añade `--help` a un subcomando para ver todas las opciones.

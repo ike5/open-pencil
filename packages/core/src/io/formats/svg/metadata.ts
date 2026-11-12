@@ -1,0 +1,58 @@
+import type { Element } from '@xmldom/xmldom'
+
+import type { Rect, Size } from '@open-pencil/scene-graph/primitives'
+
+import { parseSVGDocument } from './document'
+
+function rootElement(svg: string): Element | null {
+  return parseSVGDocument(svg)?.documentElement ?? null
+}
+
+/** A `viewBox` value as a rect, or null when it is malformed or does not establish a viewport. */
+export function parseSVGViewBoxValue(value: string | null | undefined): Rect | null {
+  if (!value) return null
+  const values = value
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number)
+  if (values.length !== 4 || values.some((entry) => !Number.isFinite(entry))) return null
+  const [x = 0, y = 0, width = 0, height = 0] = values
+  if (width <= 0 || height <= 0) return null
+  return { x, y, width, height }
+}
+
+export function parseSVGViewBox(svg: string): Rect | null {
+  return parseSVGViewBoxValue(rootElement(svg)?.getAttribute('viewBox') ?? null)
+}
+
+function parseSVGDimension(root: Element | null, attribute: string): number | null {
+  const value = root?.getAttribute(attribute)
+  if (!value) return null
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+export function parseSVGSize(svg: string, fallback: Size = { width: 24, height: 24 }): Size {
+  const root = rootElement(svg)
+  const viewBox = parseSVGViewBoxValue(root?.getAttribute('viewBox') ?? null)
+  const width = parseSVGDimension(root, 'width')
+  const height = parseSVGDimension(root, 'height')
+  if (width && height) return { width, height }
+  if (viewBox) return { width: viewBox.width, height: viewBox.height }
+  return fallback
+}
+
+/** The root `<svg>` element's `id`. */
+export function svgRootId(svg: string): string | null {
+  return rootElement(svg)?.getAttribute('id') || null
+}
+
+/** Whether text is an SVG document, such as markup copied from a code editor or Figma's Copy as SVG. */
+export function isSVGMarkup(text: string): boolean {
+  if (
+    !/^\s*(?:<\?xml[^>]*>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)
+  ) {
+    return false
+  }
+  return (rootElement(text)?.localName ?? '') === 'svg'
+}

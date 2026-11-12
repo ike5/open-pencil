@@ -1,64 +1,54 @@
 ---
-title: Chat IA
-description: Asistente IA integrado con más de 90 herramientas para crear y modificar diseños.
+title: Chat con AI
+description: Asistente integrado con más de 90 herramientas para crear, modificar y analizar diseños.
 ---
 
-# Chat IA
+# Chat con AI
 
-Presiona <kbd>⌘</kbd><kbd>J</kbd> (<kbd>Ctrl</kbd> + <kbd>J</kbd>) para abrir el asistente IA. Describe lo que quieres — crea formas, establece estilos, gestiona el layout, trabaja con componentes y analiza tu diseño.
+Pulsa <kbd>⌘</kbd><kbd>J</kbd> o <kbd>Ctrl</kbd><kbd>J</kbd>. El asistente puede crear formas, modificar estilos, configurar disposiciones, trabajar con componentes y analizar el documento.
 
-## Configuración
+## Configurar modelos
 
-1. Abre el panel de chat IA (<kbd>⌘</kbd><kbd>J</kbd>)
-2. Haz clic en el icono de ajustes
-3. Elige un proveedor e introduce tu clave API
-4. Selecciona un modelo
+La primera vez que abres OpenPencil, la configuración guiada pregunta en qué debe ayudarte la IA y qué usas ya: un agente de programación como Claude Code, Codex, Antigravity CLI, Gemini CLI, Cursor o Grok Build en la aplicación de escritorio, una cuenta de API o un servidor local o de la empresa. Conecta ese acceso y lo asigna a los roles **Design agent** y **Vision**, sin tocar lo que configuraste a mano. Con OpenRouter puedes iniciar sesión en lugar de pegar una clave de API. Puedes omitirla y volver a ejecutarla desde **Ajustes → IA y agentes → Iniciar la configuración guiada**. Para configurar los modelos a mano:
 
-### Proveedores compatibles
+1. Abre el chat.
+2. Selecciona el icono de ajustes.
+3. Añade un perfil y configura conexión, identificador del modelo, credenciales y capacidades.
 
-| Proveedor | Modelos | Configuración |
-|-----------|---------|---------------|
-| **OpenRouter** | Claude, GPT-4, Gemini, DeepSeek y otros | Clave API de [openrouter.ai](https://openrouter.ai) |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus, etc. | Clave API de [console.anthropic.com](https://console.anthropic.com) |
-| **OpenAI** | GPT-4o, GPT-4, etc. | Clave API de [platform.openai.com](https://platform.openai.com) |
-| **Google AI** | Gemini 2.0, Gemini 1.5, etc. | Clave API de [aistudio.google.dev](https://aistudio.google.dev) |
-| **Compatible con OpenAI** | Cualquier endpoint con formato de API OpenAI | URL base personalizada + clave. Admite alternancia entre API de Completions y Responses. |
-| **Compatible con Anthropic** | Cualquier endpoint con formato de API Anthropic | URL base personalizada + clave |
+Puedes guardar varios perfiles y asignarlos por separado a diseño, revisiones, tareas rápidas y entrada de imágenes. Los perfiles que comparten una conexión reutilizan la misma credencial almacenada de forma segura.
 
-Sin backend, sin suscripción — tu clave se comunica directamente con el proveedor.
+## Proveedores
 
-## Funciones
+OpenPencil admite conexiones compatibles con OpenAI y Anthropic, además de OpenRouter, Google, Z.ai y proveedores locales. Los modelos y capacidades disponibles dependen de cada servicio.
 
-El asistente tiene más de 90 herramientas en estas categorías:
+OpenPencil no usa un servidor intermediario. Las solicitudes se envían directamente al proveedor; en el navegador se aplican sus políticas CORS. La fiabilidad de las llamadas de herramientas en flujo continuo también puede variar entre despliegues. Consulta [Compatibilidad BYOK](/programmable/byok-provider-compatibility) para ver mediciones y pasos de reproducción.
 
-- **Crear** — frames, formas, texto, componentes, páginas. Renderiza JSX para layouts complejos.
-- **Estilo** — rellenos, contornos, efectos, opacidad, radio de borde, modos de fusión.
-- **Layout** — auto-layout, grid, alineación, espaciado, dimensionamiento.
-- **Componentes** — crear componentes, instancias, conjuntos de componentes. Gestionar sobrecargas.
-- **Variables** — crear/editar variables, colecciones, modos. Vincular a rellenos.
-- **Consultar** — buscar nodos, selectores XPath, leer propiedades, listar páginas, fuentes, selección.
-- **Inspeccionar** — `get_jsx` para vista JSX, `diff_jsx` para diferencias estructurales, `describe` para rol semántico y problemas de diseño.
-- **Analizar** — paleta de colores, auditoría tipográfica, consistencia de espaciado, detección de patrones.
-- **Exportar** — PNG, SVG, JSX con clases Tailwind. Verificación visual mediante `export_image`.
-- **Vector** — operaciones booleanas, manipulación de trazados.
+## Agentes ACP y MCP remoto
+
+La aplicación de escritorio puede ejecutar agentes ACP y conectarlos a servidores remotos de confianza que implementen [Model Context Protocol](https://modelcontextprotocol.io/). En **Ajustes → Conexiones MCP**, añade un extremo HTTP transmisible, un nombre y, si hace falta, un token Bearer.
+
+El token se guarda en el almacén seguro de credenciales, no en los ajustes ordinarios, y solo se recupera al iniciar la sesión ACP.
+
+## Herramientas
+
+Las herramientas cubren lectura, creación, modificación, estructura, variables, vectores, análisis, descripción, generación de código e imágenes de stock. Cada llamada actúa sobre el editor activo y participa en su historial de deshacer cuando corresponde.
+
+## Habilidades
+
+Las habilidades son carpetas con un `SKILL.md` en el formato [Agent Skills](https://agentskills.io/specification): instrucciones para un tipo de trabajo, con archivos de referencia opcionales. La IA integrada ve el nombre y la descripción de cada habilidad activa y carga sus instrucciones cuando una solicitud coincide; los scripts de una habilidad no se ejecutan.
+
+En **Ajustes → Habilidades** sube una habilidad como ZIP de su carpeta o como `SKILL.md`. En la app de escritorio también se leen `~/.agents/skills` y `~/.claude/skills`, y las carpetas `.agents/skills` y `.claude/skills` junto al documento abierto, que solo se usan tras **Confiar en la carpeta**. Escribe `/` al principio de un mensaje para elegir una habilidad, y `@` para mencionar una capa, una página o una habilidad. Las menciones aparecen como chips, también en las respuestas; al hacer clic se muestra la capa en el lienzo.
 
 ## Verificación visual
 
-El asistente puede verificar su trabajo visualmente. Después de crear o modificar diseños, utiliza `export_image` para capturar una imagen y verificar el resultado contra la solicitud original.
+El asistente puede comprobar su trabajo visualmente. Con `export_image` activada, captura una imagen tras crear o modificar diseños y la compara con lo que se pidió. `diff_pixels`, activada por defecto, compara un objeto editado con una copia de referencia y devuelve los píxeles y la región que cambiaron, de modo que el asistente puede confirmar que la edición se limitó a su objetivo.
 
-## Ejemplos de prompts
-
-- "Crea una tarjeta con título, descripción y un botón azul"
-- "Haz que todos los botones de esta página usen el mismo radio de borde"
-- "¿Qué fuentes se usan en este archivo?"
-- "Cambia el fondo del frame seleccionado a un degradado de azul a morado"
-- "Exporta el frame seleccionado como SVG"
-- "Muéstrame el JSX de este frame"
+Las herramientas de inspección incluyen `get_jsx`, `diff_nodes` para diferencias estructurales, `diff_pixels` para diferencias de píxeles y `describe` para el rol semántico y la detección de problemas de diseño.
 
 ## Consejos
 
-- Selecciona nodos antes de preguntar — el asistente sabe qué está seleccionado.
-- Sé específico con colores, tamaños y posiciones para resultados precisos.
-- El asistente puede modificar múltiples nodos en un solo mensaje.
-- Usa "deshacer" en el editor — las mutaciones de IA admiten deshacer completo.
-- Todos los layouts se recalculan automáticamente después de cada ejecución de herramienta.
+- Puedes recorrer otras páginas mientras se genera una respuesta: el asistente sigue trabajando en la página donde empezó el mensaje y sus vistas previas aparecen al volver. Mientras estás en otra página, el chat indica en cuál trabaja y ofrece **Ir a la página** para volver. Si el asistente cambia de página por su cuenta, tu vista lo sigue.
+
+## Privacidad y costes
+
+Las solicitudes se envían al proveedor configurado. Revisa sus condiciones, política de datos y precios antes de enviar documentos sensibles. OpenPencil no incluye créditos de modelos.

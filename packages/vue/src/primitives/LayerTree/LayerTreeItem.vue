@@ -2,7 +2,6 @@
 import { computed, ref } from 'vue'
 
 import { useLayerTree } from '#vue/primitives/LayerTree/context'
-
 import type { LayerNode } from '#vue/primitives/LayerTree/context'
 
 const { node, level, hasChildren } = defineProps<{
@@ -22,8 +21,8 @@ const emit = defineEmits<{
 const ctx = useLayerTree()
 
 const isSelected = computed(() => ctx.selectedIds.value.has(node.id))
-const isDragging = computed(() => false)
-const padLeft = computed(() => `${8 + (level - 1) * ctx.indentPerLevel}px`)
+const isDragging = computed(() => ctx.draggingId.value === node.id)
+const padLeft = computed(() => `${(level - 1) * ctx.indentPerLevel}px`)
 
 const rowEl = ref<HTMLElement | null>(null)
 
@@ -32,6 +31,13 @@ function onRef(el: unknown) {
   rowEl.value = htmlEl
   ctx.setRowRef(node.id, htmlEl)
 }
+
+ctx.setupDrag(rowEl, () => ({
+  id: node.id,
+  level,
+  hasChildren,
+  parentId: null
+}))
 
 const actions = {
   select: (additive: boolean) => {
@@ -60,13 +66,16 @@ defineExpose({ rowEl })
 </script>
 
 <template>
-  <div :ref="onRef" :data-node-id="node.id">
+  <div :ref="onRef" :data-node-id="node.id" class="w-full">
     <slot
       :node="node"
       :level="level"
       :has-children="hasChildren"
       :is-selected="isSelected"
       :is-dragging="isDragging"
+      :instruction="ctx.instruction.value"
+      :instruction-target-id="ctx.instructionTargetId.value"
+      :focused="ctx.focused.value"
       :pad-left="padLeft"
       :actions="actions"
     />

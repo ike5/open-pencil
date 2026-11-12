@@ -1,19 +1,17 @@
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
-import type { Editor } from '@open-pencil/core/editor'
+import { resolveEditorProfile, type Editor } from '@open-pencil/core'
 import type { IORegistry } from '@open-pencil/core/io'
-import type { SceneGraph } from '@open-pencil/core/scene-graph'
+import { createSelectedNodeState } from '@open-pencil/vue/editor/selection-state'
 
 import { createDocumentExportActions } from '@/app/document/export'
 import { createDocumentIOActions } from '@/app/document/io'
+import { createDesignCheck } from '@/app/editor/design-check/session'
 import { createFlashActions } from '@/app/editor/flash'
 import { createMobileClipboardActions } from '@/app/editor/mobile-clipboard'
-import { createPenActions } from '@/app/editor/pen'
+import type { EditorPreparationController } from '@/app/editor/preparation/controller'
 import { createProfilerActions } from '@/app/editor/profiler'
 import type { AppEditorState } from '@/app/editor/session/types'
-import { createVectorEditActions } from '@/app/editor/vector-edit'
-
-type ViewportSize = { width: number; height: number }
 
 export function defineEditorStoreAccessors(store: object, editor: Editor) {
   Object.defineProperties(store, {
@@ -25,6 +23,10 @@ export function defineEditorStoreAccessors(store: object, editor: Editor) {
       enumerable: true,
       get: () => editor.renderer
     },
+    canvasRenderers: {
+      enumerable: true,
+      get: () => editor.canvasRenderers
+    },
     textEditor: {
       enumerable: true,
       get: () => editor.textEditor
@@ -33,10 +35,7 @@ export function defineEditorStoreAccessors(store: object, editor: Editor) {
 }
 
 export function createEditorComputedRefs(editor: Editor, state: AppEditorState) {
-  const selectedNodes = computed(() => {
-    void state.sceneVersion
-    return editor.getSelectedNodes()
-  })
+  const { nodes: selectedNodes, dispose: disposeSelection } = createSelectedNodeState(editor)
 
   const selectedNode = computed(() =>
     selectedNodes.value.length === 1 ? selectedNodes.value[0] : undefined
@@ -47,37 +46,73 @@ export function createEditorComputedRefs(editor: Editor, state: AppEditorState) 
     return editor.getLayerTree()
   })
 
-  return { selectedNodes, selectedNode, layerTree }
+  return { selectedNodes, selectedNode, layerTree, disposeSelection }
 }
 
 export function createEditorStoreModules(
   editor: Editor,
-  graph: SceneGraph,
   state: AppEditorState,
   io: IORegistry,
-  viewportSize: ViewportSize
+  preparationController: EditorPreparationController
 ) {
   const flash = createFlashActions(editor, state)
-  const pen = createPenActions(editor, graph, state)
-  const vectorEdit = createVectorEditActions(editor, graph, state)
-  const documentIO = createDocumentIOActions(editor, state, viewportSize)
+  const documentIO = createDocumentIOActions(editor, state, preparationController)
   const documentExport = createDocumentExportActions(editor, state, io, documentIO.downloadBlob)
-  const mobileClipboard = createMobileClipboardActions(editor, state)
+  const mobileClipboard = createMobileClipboardActions(editor)
   const profiler = createProfilerActions(editor)
+  const designCheck = createDesignCheck(editor, state)
+  // A document opens with the panels its kind starts with: a board on the canvas alone.
+  watch(
+    () => state.documentKind,
+    () => {
+      state.showUI = resolveEditorProfile(state).panelsOpen
+    },
+    { immediate: true }
+  )
 
   return {
     ...flash,
-    ...pen,
-    ...vectorEdit,
     openFigFile: documentIO.openFigFile,
-    setViewportSize: documentIO.setViewportSize,
+    openDOMFile: documentIO.openDOMFile,
+    importDOMText: documentIO.importDOMText,
     fitCurrentPageToViewport: documentIO.fitCurrentPageToViewport,
+    hasUnsavedChanges: documentIO.hasUnsavedChanges,
+    renameDocument: documentIO.renameDocument,
+    /** Calls back with each name the person gives the document. */
+    onDocumentRenamed: documentIO.onDocumentRenamed,
+    /** Takes the document as it is now as its saved state, so closing it asks nothing. */
+    markDocumentSaved: documentIO.markDocumentSaved,
+    /** Counts the document changed by something outside its history, so it gets saved. */
+    markDocumentChanged: documentIO.markDocumentChanged,
+    /** Applies changes the document already has elsewhere, such as its room's, as no edit. */
+    adoptChanges: documentIO.adoptChanges,
     saveFigFile: documentIO.saveFigFile,
     saveFigFileAs: documentIO.saveFigFileAs,
+    getDocumentFilePath: documentIO.getDocumentFilePath,
+    getDocumentFileHandle: documentIO.getDocumentFileHandle,
+    hasWritableSource: documentIO.hasWritableSource,
+    getSourceIdentity: documentIO.getSourceIdentity,
+    getStorageBinding: documentIO.getStorageBinding,
+    getRecoveryId: documentIO.getRecoveryId,
+    adoptRecoverySnapshot: documentIO.adoptRecoverySnapshot,
+    persistRecoveryNow: documentIO.persistRecoveryNow,
+    discardRecovery: documentIO.discardRecovery,
     setDocumentSource: documentIO.setDocumentSource,
+    setStorageDocumentSource: documentIO.setStorageDocumentSource,
     setPlannedFilePath: documentIO.setPlannedFilePath,
+    saveFigFileToPath: documentIO.saveFigFileToPath,
+    saveFigFileCopy: documentIO.saveFigFileCopy,
+    saveFigFileToStorage: documentIO.saveFigFileToStorage,
     startWatchingCurrentFile: documentIO.startWatchingCurrentFile,
-    dispose: documentIO.disposeDocumentIO,
+    designCheck,
+    dispose: () => {
+      designCheck.dispose()
+      editor.releaseGraphResources()
+      editor.dispose()
+      editor.clearPageViewports()
+      documentIO.disposeDocumentIO()
+      preparationController.dispose()
+    },
     ...documentExport,
     ...mobileClipboard,
     ...profiler

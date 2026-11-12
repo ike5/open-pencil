@@ -1,24 +1,31 @@
-import type { Editor, EditorState } from '@open-pencil/core/editor'
-import type {
-  ExportRequest,
-  IOFormatAdapter,
-  IORegistry,
-  RasterExportFormat
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeFile as tauriWrite } from '@tauri-apps/plugin-fs'
+
+import type { Editor, EditorState } from '@open-pencil/core'
+import {
+  findPageId,
+  type ExportRequest,
+  type IOFormatAdapter,
+  type IORegistry
 } from '@open-pencil/core/io'
-import { renderNodesToImage } from '@open-pencil/core/io/formats/raster'
-import type { SceneGraph } from '@open-pencil/core/scene-graph'
+import { type RasterExportFormat, renderNodesToImage } from '@open-pencil/core/io/formats/raster'
+import type { SceneGraph } from '@open-pencil/scene-graph'
 
+import type { ExportOptions } from '@/app/document/export/types'
+import { pickBrowserSaveFile, supportsFileSystemAccess } from '@/app/document/io/capability'
 import { isTauri } from '@/app/tauri/env'
-
-type ExportOptions = {
-  scale?: number
-  quality?: number
-  jsxFormat?: 'openpencil' | 'tailwind'
-}
 
 type ExportData = string | ArrayBuffer | Uint8Array
 
 type DownloadBlob = (data: Uint8Array, filename: string, mime: string) => void
+
+export interface ExportedFile {
+  bytes: Uint8Array
+  fileName: string
+  format: string
+  ext: string
+  mime: string
+}
 
 export function getExportBaseName(graph: SceneGraph, target: ExportRequest['target']): string {
   if (target.scope === 'node') return graph.getNode(target.nodeId)?.name ?? 'Export'
@@ -29,25 +36,20 @@ export function getExportBaseName(graph: SceneGraph, target: ExportRequest['targ
   return 'Export'
 }
 
-export function getExportOptions(formatId: string, options?: ExportOptions): unknown {
-  if (formatId === 'png' || formatId === 'jpg' || formatId === 'webp') {
-    return {
-      format: formatId.toUpperCase(),
-      scale: options?.scale ?? 1,
-      quality: options?.quality
-    }
+export function getExportOptions(format: IOFormatAdapter, options?: ExportOptions): unknown {
+  if (format.exportOptions?.scale) {
+    return { scale: options?.scale ?? 1, quality: options?.quality }
   }
-  if (formatId === 'jsx') return { format: options?.jsxFormat ?? 'openpencil' }
   return undefined
 }
 
 export function getExportFileName(
   baseName: string,
-  formatId: string,
+  format: IOFormatAdapter,
   extension: string,
   options?: ExportOptions
 ): string {
-  return formatId === 'png' || formatId === 'jpg' || formatId === 'webp'
+  return format.exportOptions?.scale
     ? `${baseName}@${options?.scale ?? 1}x.${extension}`
     : `${baseName}.${extension}`
 }
@@ -57,19 +59,26 @@ export function getExportBytes(data: ExportData): Uint8Array {
 }
 
 export function createExportTargetActions(editor: Editor, state: EditorState, io: IORegistry) {
+  /**
+   * Renders `nodeIds` on the page that holds them, which need not be the page on screen;
+   * without IDs, renders every layer of `pageId`.
+   */
   async function renderExportImage(
     nodeIds: string[],
     scale: number,
-    format: RasterExportFormat
-  ): Promise<Uint8Array | null> {
+    format: RasterExportFormat,
+    pageId = state.currentPageId,
+    { useAbsoluteBounds = false }: { useAbsoluteBounds?: boolean } = {}
+  ): Promise<Uint8Array<ArrayBuffer> | null> {
     const renderer = editor.renderer
     if (!renderer) return null
-    const ids =
-      nodeIds.length > 0 ? nodeIds : editor.graph.getChildren(state.currentPageId).map((n) => n.id)
+    const ids = nodeIds.length > 0 ? nodeIds : editor.graph.getChildren(pageId).map((n) => n.id)
     if (ids.length === 0) return null
-    return renderNodesToImage(renderer.ck, renderer, editor.graph, state.currentPageId, ids, {
+    const ownerPageId = findPageId(editor.graph, ids[0]) ?? pageId
+    return renderNodesToImage(renderer.ck, renderer, editor.graph, ownerPageId, ids, {
       scale,
-      format
+      format,
+      useAbsoluteBounds
     })
   }
 
@@ -87,7 +96,6 @@ export function createExportTargetActions(editor: Editor, state: EditorState, io
 }
 
 export async function chooseTauriExportPath(fileName: string, format: string, ext: string) {
-  const { save } = await import('@tauri-apps/plugin-dialog')
   return save({
     defaultPath: fileName,
     filters: [{ name: format, extensions: [ext.slice(1)] }]
@@ -95,10 +103,10 @@ export async function chooseTauriExportPath(fileName: string, format: string, ex
 }
 
 export async function writeTauriExportFile(path: string, data: Uint8Array) {
-  const { writeFile: tauriWrite } = await import('@tauri-apps/plugin-fs')
   await tauriWrite(path, data)
 }
 
+/** Saves an exported file and reports whether it was saved; `false` means the person cancelled. */
 export async function saveExportedFile(
   data: Uint8Array,
   fileName: string,
@@ -106,17 +114,17 @@ export async function saveExportedFile(
   ext: string,
   mime: string,
   downloadBlob: DownloadBlob
-) {
+): Promise<boolean> {
   if (isTauri()) {
     const path = await chooseTauriExportPath(fileName, format, ext)
-    if (!path) return
+    if (!path) return false
     await writeTauriExportFile(path, data)
-    return
+    return true
   }
 
-  if (window.showSaveFilePicker) {
+  if (supportsFileSystemAccess()) {
     try {
-      const handle = await window.showSaveFilePicker({
+      const handle = await pickBrowserSaveFile({
         suggestedName: fileName,
         types: [
           {
@@ -125,14 +133,16 @@ export async function saveExportedFile(
           }
         ]
       })
+      if (!handle) return false
       const writable = await handle.createWritable()
       await writable.write(new Uint8Array(data))
       await writable.close()
-      return
+      return true
     } catch (e) {
-      if ((e as Error).name === 'AbortError') return
+      if ((e as Error).name === 'AbortError') return false
     }
   }
 
   downloadBlob(data, fileName, mime)
+  return true
 }

@@ -1,6 +1,9 @@
-import type { SkiaRenderer } from '@open-pencil/core/canvas'
-import { IS_BROWSER } from '@open-pencil/core/constants'
-import type { Editor } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
+import {
+  hitTestIssueMarkers,
+  hitTestStatusLabels,
+  type SkiaRenderer
+} from '@open-pencil/core/canvas'
 
 import { useViewportKind } from '#vue/editor/viewport-kind/use'
 
@@ -9,31 +12,65 @@ export type RulerVisibilityOptions = {
 }
 
 export function createRulerVisibility(options?: RulerVisibilityOptions) {
-  const params = IS_BROWSER ? new URLSearchParams(window.location.search) : new URLSearchParams()
-  const noRulersParam = params.has('no-rulers')
   const { isMobile } = useViewportKind()
 
   return function shouldShowRulers() {
     if (options?.showRulers === false) return false
-    return !noRulersParam && !isMobile.value
+    return !isMobile.value
   }
 }
 
 export function createCanvasHitTests(editor: Editor, getRenderer: () => SkiaRenderer | null) {
   function hitTestSectionTitle(canvasX: number, canvasY: number) {
-    return getRenderer()?.hitTestSectionTitle(editor.graph, canvasX, canvasY) ?? null
+    return (
+      getRenderer()?.hitTestSectionTitle(
+        editor.graph,
+        canvasX,
+        canvasY,
+        editor.state.rotationPreview
+      ) ?? null
+    )
   }
 
   function hitTestComponentLabel(canvasX: number, canvasY: number) {
-    return getRenderer()?.hitTestComponentLabel(editor.graph, canvasX, canvasY) ?? null
+    return (
+      getRenderer()?.hitTestComponentLabel(
+        editor.graph,
+        canvasX,
+        canvasY,
+        editor.state.rotationPreview
+      ) ?? null
+    )
   }
 
   function hitTestFrameTitle(canvasX: number, canvasY: number) {
     return (
-      getRenderer()?.hitTestFrameTitle(editor.graph, canvasX, canvasY, editor.state.selectedIds) ??
-      null
+      getRenderer()?.hitTestFrameTitle(
+        editor.graph,
+        canvasX,
+        canvasY,
+        editor.state.rotationPreview
+      ) ?? null
     )
   }
 
-  return { hitTestSectionTitle, hitTestComponentLabel, hitTestFrameTitle }
+  /** Issue marker under a point in canvas-element CSS pixels, from the last drawn frame. */
+  function hitTestIssueMarker(screenX: number, screenY: number) {
+    const renderer = getRenderer()
+    return renderer ? hitTestIssueMarkers(renderer.issueMarkers, screenX, screenY) : null
+  }
+
+  /** Status pill or dot under a point in canvas-element CSS pixels, from the last drawn frame. */
+  function hitTestStatusLabel(screenX: number, screenY: number) {
+    const renderer = getRenderer()
+    return renderer ? hitTestStatusLabels(renderer.statusLabels, screenX, screenY) : null
+  }
+
+  return {
+    hitTestSectionTitle,
+    hitTestComponentLabel,
+    hitTestFrameTitle,
+    hitTestIssueMarker,
+    hitTestStatusLabel
+  }
 }

@@ -5,5 +5,5 @@ export {
   getCollection,
   listCollections
 } from './variables/collections'
-export { findVariables, getVariable, listVariables } from './variables/read'
+export { getVariable, listVariables } from './variables/read'
 export { createVariable, deleteVariable, setVariable } from './variables/values'

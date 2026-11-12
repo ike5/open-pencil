@@ -1,21 +1,45 @@
-import { colorToHex } from '#core/color'
-import { colorToDisplayCss, getDefaultRenderColorSpace } from '#core/color/management'
-import type { RenderColorSpace } from '#core/color/management'
-import type { Effect, Fill, SceneGraph, SceneNode } from '#core/scene-graph'
-import type { Color } from '#core/types'
+import type { Effect, Fill, SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import {
+  colorToHex,
+  colorToDisplayCSS,
+  getDefaultRenderColorSpace,
+  type RenderColorSpace
+} from '@open-pencil/scene-graph/color'
+import {
+  gradientPoint,
+  invertGradientTransform,
+  isIdentityGradientTransform
+} from '@open-pencil/scene-graph/gradient'
+import { imageDataURL } from '@open-pencil/scene-graph/images'
+import type { Color } from '@open-pencil/scene-graph/primitives'
 
 import { svg, type SVGNode } from './node'
 import { round } from './paths'
+import type { SVGTextLayout } from './text/lines'
 
 export interface SVGExportContext {
   defs: SVGNode[]
   defIdCounter: number
   graph: SceneGraph
   colorSpace: RenderColorSpace
+  /** Starts every def id, so SVGs inlined on one page cannot reference each other's defs. */
+  idPrefix?: string
+  /** Paints drawn in `currentColor`, such as an icon's tinted paths, so CSS `color` sets them. */
+  tint?: (node: SceneNode) => readonly ('fill' | 'stroke')[]
+  /** Measured line breaks. Without them, only explicit newlines start a new baseline. */
+  textLayout?: SVGTextLayout
+  /**
+   * When layers are written with their names as ids: how many have taken each name, and every id
+   * given out so far, defs included, so no two elements share one.
+   */
+  layerIds?: { names: Map<string, number>; taken: Set<string> }
 }
 
 export function nextDefId(ctx: SVGExportContext, prefix: string): string {
-  return `${prefix}${ctx.defIdCounter++}`
+  let id = `${ctx.idPrefix ?? ''}${prefix}${ctx.defIdCounter++}`
+  while (ctx.layerIds?.taken.has(id)) id = `${ctx.idPrefix ?? ''}${prefix}${ctx.defIdCounter++}`
+  ctx.layerIds?.taken.add(id)
+  return id
 }
 
 export function formatColor(
@@ -25,9 +49,41 @@ export function formatColor(
 ): string {
   const alphaColor = { ...color, a: color.a * opacity }
   if (colorSpace === 'display-p3') {
-    return colorToDisplayCss(alphaColor, { colorSpace })
+    return colorToDisplayCSS(alphaColor, { colorSpace })
   }
+  // Hex has no alpha. Stops and shadows already emit theirs; solid fills use `solidFillOpacity`.
   return colorToHex(alphaColor)
+}
+
+/**
+ * A solid paint's SVG color. The canvas paints `opacity` and drops color alpha: `setAlphaf`
+ * replaces it, and `.pen` stores a hex alpha in both fields. Display P3 carries that painted
+ * alpha in the color. sRGB hex cannot, so `solidFillOpacity` emits it beside the color.
+ */
+export function formatSolidColor(
+  color: Color,
+  opacity: number,
+  colorSpace: RenderColorSpace
+): string {
+  if (colorSpace === 'display-p3') {
+    return formatColor({ ...color, a: 1 }, round(opacity), colorSpace)
+  }
+  return formatColor(color, 1, colorSpace)
+}
+
+/**
+ * `fill-opacity` for a solid paint. Omitted at full opacity so an opaque export stays unchanged.
+ * Display P3 already carries the same alpha in the color `formatSolidColor` returns, unless
+ * `separate` is set because that color was replaced and can no longer carry it.
+ */
+export function solidFillOpacity(
+  fill: Fill,
+  colorSpace: RenderColorSpace,
+  separate = false
+): number | undefined {
+  if (fill.type !== 'SOLID' || (colorSpace === 'display-p3' && !separate)) return undefined
+  const alpha = round(fill.opacity)
+  return alpha < 1 ? alpha : undefined
 }
 
 function createGradientDef(
@@ -49,45 +105,55 @@ function createGradientDef(
 
   const id = nextDefId(ctx, 'grad')
 
+  // Gradient space in bounding-box units, mapped onto the layer as the canvas draws it.
+  const toLayer = invertGradientTransform(t)
+  const transform = isIdentityGradientTransform(toLayer)
+    ? undefined
+    : `matrix(${[toLayer.m00, toLayer.m10, toLayer.m01, toLayer.m11, toLayer.m02, toLayer.m12].map((v) => round(v, 6)).join(' ')})`
+
   if (fill.type === 'GRADIENT_LINEAR') {
-    const startX = round(t.m02 * 100)
-    const startY = round(t.m12 * 100)
-    const endX = round((t.m00 + t.m02) * 100)
-    const endY = round((t.m10 + t.m12) * 100)
     return {
       id,
       node: svg(
         'linearGradient',
         {
           id,
-          x1: `${startX}%`,
-          y1: `${startY}%`,
-          x2: `${endX}%`,
-          y2: `${endY}%`,
-          gradientUnits: 'objectBoundingBox'
+          x1: 0,
+          y1: 0.5,
+          x2: 1,
+          y2: 0.5,
+          gradientUnits: 'objectBoundingBox',
+          gradientTransform: transform
         },
         ...stopNodes
       )
     }
   }
 
+  // SVG has no diamond gradient, so a diamond exports as the radial one it is closest to.
   if (fill.type === 'GRADIENT_RADIAL' || fill.type === 'GRADIENT_DIAMOND') {
-    const cx = round(t.m02 * 100)
-    const cy = round(t.m12 * 100)
-    const r = round(Math.sqrt(t.m00 * t.m00 + t.m10 * t.m10) * 100)
     return {
       id,
       node: svg(
         'radialGradient',
-        { id, cx: `${cx}%`, cy: `${cy}%`, r: `${r}%`, gradientUnits: 'objectBoundingBox' },
+        {
+          id,
+          cx: 0.5,
+          cy: 0.5,
+          r: 0.5,
+          gradientUnits: 'objectBoundingBox',
+          gradientTransform: transform
+        },
         ...stopNodes
       )
     }
   }
 
+  // Nor an angular one: it exports as a radial gradient around its centre.
   if (fill.type === 'GRADIENT_ANGULAR') {
-    const cx = round(t.m02 * node.width)
-    const cy = round(t.m12 * node.height)
+    const center = gradientPoint(t, { x: 0.5, y: 0.5 })
+    const cx = round(center.x * node.width)
+    const cy = round(center.y * node.height)
     const r = Math.max(node.width, node.height)
     return {
       id,
@@ -108,9 +174,6 @@ function createImagePattern(
   if (!data) return null
 
   const id = nextDefId(ctx, 'img')
-  const base64 = btoa(String.fromCharCode(...data))
-  const mime = detectImageMime(data)
-
   return {
     id,
     node: svg(
@@ -122,20 +185,13 @@ function createImagePattern(
         height: 1
       },
       svg('image', {
-        href: `data:${mime};base64,${base64}`,
+        href: imageDataURL(data),
         width: node.width,
         height: node.height,
         preserveAspectRatio: fill.imageScaleMode === 'FIT' ? 'xMidYMid meet' : 'xMidYMid slice'
       })
     )
   }
-}
-
-function detectImageMime(data: Uint8Array): string {
-  if (data[0] === 0x89 && data[1] === 0x50) return 'image/png'
-  if (data[0] === 0xff && data[1] === 0xd8) return 'image/jpeg'
-  if (data[0] === 0x52 && data[1] === 0x49) return 'image/webp'
-  return 'image/png'
 }
 
 export function createFilterDef(
@@ -205,7 +261,7 @@ export function resolveFill(fill: Fill, node: SceneNode, ctx: SVGExportContext):
   if (!fill.visible) return null
 
   if (fill.type === 'SOLID') {
-    return formatColor(fill.color, fill.opacity, ctx.colorSpace)
+    return formatSolidColor(fill.color, fill.opacity, ctx.colorSpace)
   }
 
   if (fill.type.startsWith('GRADIENT')) {
@@ -227,6 +283,18 @@ export function resolveFill(fill: Fill, node: SceneNode, ctx: SVGExportContext):
   return null
 }
 
+/** The paints SVG can draw, each with its fill attribute: a stroke goes on the last of them. */
+export function drawnFills(
+  fills: readonly Fill[],
+  node: SceneNode,
+  ctx: SVGExportContext
+): Array<{ fill: Fill; paint: string }> {
+  return fills.flatMap((fill) => {
+    const paint = resolveFill(fill, node, ctx)
+    return paint ? [{ fill, paint }] : []
+  })
+}
+
 export const SVG_STROKE_CAP: Record<string, string> = {
   NONE: 'butt',
   ROUND: 'round',
@@ -237,23 +305,4 @@ export const SVG_STROKE_JOIN: Record<string, string> = {
   MITER: 'miter',
   ROUND: 'round',
   BEVEL: 'bevel'
-}
-
-export const SVG_BLEND_MODE: Record<string, string> = {
-  NORMAL: 'normal',
-  DARKEN: 'darken',
-  MULTIPLY: 'multiply',
-  COLOR_BURN: 'color-burn',
-  LIGHTEN: 'lighten',
-  SCREEN: 'screen',
-  COLOR_DODGE: 'color-dodge',
-  OVERLAY: 'overlay',
-  SOFT_LIGHT: 'soft-light',
-  HARD_LIGHT: 'hard-light',
-  DIFFERENCE: 'difference',
-  EXCLUSION: 'exclusion',
-  HUE: 'hue',
-  SATURATION: 'saturation',
-  COLOR: 'color',
-  LUMINOSITY: 'luminosity'
 }

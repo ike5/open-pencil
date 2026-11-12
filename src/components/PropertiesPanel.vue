@@ -1,48 +1,101 @@
 <script setup lang="ts">
 import { TabsContent, TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
+import { tv } from 'tailwind-variants'
+import { computed, watchEffect } from 'vue'
 
-import { useI18n } from '@open-pencil/vue'
+import { resolveEditorProfile } from '@open-pencil/core'
+import { useDesignCheckMessages, useI18n } from '@open-pencil/vue/i18n'
+
 import { useAIChat } from '@/app/ai/chat/use'
+import { isVersionHistoryOpen } from '@/app/cloud/integration'
+import { useEditorStore } from '@/app/editor/active-store'
+import { countIssues } from '@/app/editor/design-check/issues'
+import ChatPanel from '@/components/chat/ChatPanel.vue'
+import { CloudVersionHistory } from '@/components/cloud/integration'
+import propertiesTabsTheme from '@/theme/panel/properties-tabs'
 
-import ChatPanel from './ChatPanel.vue'
 import CodePanel from './CodePanel.vue'
+import CommentsPanel from './comments/CommentsPanel.vue'
+import DesignCheckPanel from './design-check/DesignCheckPanel.vue'
 import DesignPanel from './DesignPanel.vue'
-import ZoomDropdown from './ZoomDropdown.vue'
+import ZoomDropdown from './editor/ZoomDropdown.vue'
+
+const propertiesTabs = tv(propertiesTabsTheme)
 
 const { activeTab } = useAIChat()
 const { panels } = useI18n()
+const checkMessages = useDesignCheckMessages()
+const store = useEditorStore()
+
+const tabStyles = propertiesTabs()
+/** The Comment tool turns the sidebar into the comments list, as in Figma; the tabs keep their state. */
+const commenting = computed(() => store.state.activeTool === 'COMMENT')
+/** Version history takes the sidebar while it is open, for the document and a version alike. */
+const history = computed(() => isVersionHistoryOpen(store))
+
+/** Whether the document has design lint: a board has none, as FigJam has none. */
+const lints = computed(() => resolveEditorProfile(store.state).lint)
+// A board opened on the Lint tab shows Design instead.
+watchEffect(() => {
+  if (!lints.value && activeTab.value === 'lint') activeTab.value = 'design'
+})
+
+/** Errors and warnings on the current page; suggestions do not earn an indicator. */
+const problemCount = computed(() => {
+  const snapshot = store.designCheck.snapshot.value
+  if (!snapshot || snapshot.pageId !== store.state.currentPageId) return null
+  const counts = countIssues(snapshot.issues)
+  return { total: counts.error + counts.warning, severity: counts.error > 0 ? 'error' : 'warning' }
+})
 </script>
 
 <template>
   <aside
     data-test-id="properties-panel"
-    class="flex min-w-0 flex-1 flex-col overflow-hidden border-l border-border bg-panel"
+    class="flex min-w-0 flex-1 flex-col overflow-hidden border-s border-border bg-panel"
     style="contain: paint layout style"
   >
-    <TabsRoot v-model="activeTab" class="flex min-h-0 flex-1 flex-col">
-      <TabsList class="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2">
+    <CloudVersionHistory v-if="history" />
+    <CommentsPanel v-else-if="commenting" />
+    <TabsRoot
+      v-show="!commenting && !history"
+      v-model="activeTab"
+      class="flex min-h-0 flex-1 flex-col"
+    >
+      <TabsList :class="tabStyles.list()">
         <TabsTrigger
           value="design"
           data-test-id="properties-tab-design"
-          class="rounded px-2.5 py-1 text-xs text-muted hover:text-surface data-[state=active]:font-semibold data-[state=active]:text-surface"
+          :class="tabStyles.trigger()"
         >
           {{ panels.design }}
         </TabsTrigger>
-        <TabsTrigger
-          value="code"
-          data-test-id="properties-tab-code"
-          class="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted hover:text-surface data-[state=active]:font-semibold data-[state=active]:text-surface"
-        >
-          <icon-lucide-code class="size-3" />
-          {{ panels.code }}
+        <TabsTrigger value="code" data-test-id="properties-tab-code" :class="tabStyles.trigger()">
+          <icon-lucide-code :class="tabStyles.icon()" aria-hidden="true" />
+          <span :class="tabStyles.label()">{{ panels.code }}</span>
+        </TabsTrigger>
+        <TabsTrigger value="ai" data-test-id="properties-tab-ai" :class="tabStyles.trigger()">
+          <icon-lucide-sparkles :class="tabStyles.icon()" aria-hidden="true" />
+          <span :class="tabStyles.label()">{{ panels.ai }}</span>
         </TabsTrigger>
         <TabsTrigger
-          value="ai"
-          data-test-id="properties-tab-ai"
-          class="flex items-center gap-1 rounded px-2.5 py-1 text-xs text-muted hover:text-surface data-[state=active]:font-semibold data-[state=active]:text-surface"
+          v-if="lints"
+          value="lint"
+          data-test-id="properties-tab-lint"
+          :aria-label="
+            problemCount?.total
+              ? `${checkMessages.tab}, ${checkMessages.tabCount({ count: problemCount.total })}`
+              : checkMessages.tab
+          "
+          :class="tabStyles.trigger()"
         >
-          <icon-lucide-sparkles class="size-3" />
-          {{ panels.ai }}
+          <!-- Errors and warnings tint the icon, which costs no room in a full row. -->
+          <icon-lucide-list-checks
+            :data-severity="problemCount?.total ? problemCount.severity : undefined"
+            :class="tabStyles.icon()"
+            aria-hidden="true"
+          />
+          <span :class="tabStyles.label()">{{ checkMessages.tab }}</span>
         </TabsTrigger>
         <ZoomDropdown v-if="activeTab === 'design'" />
       </TabsList>
@@ -62,7 +115,16 @@ const { panels } = useI18n()
         :force-mount="true"
         :hidden="activeTab !== 'code'"
       >
-        <CodePanel />
+        <CodePanel :active="activeTab === 'code'" />
+      </TabsContent>
+
+      <TabsContent
+        value="lint"
+        class="flex min-h-0 flex-1 flex-col"
+        :force-mount="true"
+        :hidden="activeTab !== 'lint'"
+      >
+        <DesignCheckPanel :active="activeTab === 'lint'" />
       </TabsContent>
 
       <TabsContent

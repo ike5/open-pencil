@@ -1,64 +1,21 @@
 ---
 title: usePosition
-description: Position, Größe, Rotation, Ausrichtung und Spiegelung ausgewählter Knoten lesen und aktualisieren.
+description: Position, Größe, Drehung, Ausrichtung und Spiegelung der ausgewählten Objekte lesen und ändern.
 ---
 
 # usePosition
 
-`usePosition()` ist ein Steuerelemente-Composable für positions-bezogene UI.
-
-Es gibt Werte für ausgewählte Knoten zurück wie:
-
-- `x`
-- `y`
-- `width`
-- `height`
-- `rotation`
-
-sowie Aktionen wie:
-
-- ausrichten
-- spiegeln
-- rotieren
-- numerische Eigenschaften scrubben/aktualisieren
-
-## Verwendung
+`usePosition()` stellt `panelProp(key)` für `'x'`, `'y'`, `'width'`, `'height'` und `'rotation'` bereit: den Wert des Felds, auf zwei Nachkommastellen gerundet wie im Figma-Panel, oder `MIXED`, wenn die ausgewählten Ebenen verschiedene Werte anzeigen. Die Ebenen behalten ihre genauen Werte. Dazu kommen Aktionen für Ausrichtung, Spiegelung, Drehung, Vorschau und Speichern numerischer Eigenschaften.
 
 ```ts
-import { usePosition } from '@open-pencil/vue'
-
 const position = usePosition()
-```
-
-## Einfaches Beispiel
-
-```ts
-const { x, y, width, height, rotation, updateProp, commitProp } = usePosition()
-```
-
-## Praktische Beispiele
-
-### Ausgewählte Knoten ausrichten
-
-```ts
+const x = position.panelProp('x')
 position.align('horizontal', 'center')
-position.align('vertical', 'min')
-```
-
-### Auswahl spiegeln
-
-```ts
 position.flip('horizontal')
-position.flip('vertical')
-```
-
-### Auswahl rotieren
-
-```ts
 position.rotate(90)
 ```
 
-## Verwandte APIs
+## Siehe auch
 
 - [useLayout](./use-layout)
 - [useAppearance](./use-appearance)

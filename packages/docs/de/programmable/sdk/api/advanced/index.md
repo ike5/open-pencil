@@ -1,33 +1,30 @@
 ---
-title: Erweitert
-description: Hilfsmittel auf niedrigerem Level und spezialisierte APIs in @open-pencil/vue.
+title: Erweiterte API
+description: Spezialisierte öffentliche APIs aus @open-pencil/vue.
 ---
 
-# Erweitert
+# Erweiterte API
 
-Diese APIs sind öffentlich, aber spezialisierter als die Haupt-Komponenten- und Composable-Oberfläche.
+Diese APIs dienen engeren Integrationsaufgaben als die zentralen Komponenten und Composables.
 
-## Auswahl- und Szene-Hilfsmittel
+## Auswahl und SceneGraph
 
 - [useNodeProps](./use-node-props)
 - [useSceneComputed](./use-scene-computed)
 - [usePropScrub](./use-prop-scrub)
 
-## Picker, Variablen, Locale und Editor-Interna
+## Auswahlfelder, Variablen, Sprache und Editorzustand
 
 - [useColorVariableBinding](./use-color-variable-binding)
-- [useFillPicker](./use-fill-picker)
 - [useGradientStops](./use-gradient-stops)
 - [useFontPicker](./use-font-picker)
 - [useOkHCL](./use-okhcl)
 - [useVariables](./use-variables)
-- [useVariablesDialogState](./use-variables-dialog-state)
-- [useVariablesTable](./use-variables-table)
-- [Locale APIs](./locale-apis)
+- [Sprach-API](./locale-apis)
 - [useToolbarState](./use-toolbar-state)
 - [useNodeFontStatus](./use-node-font-status)
 
-## Editor-Shell-Utilities
+## Eigene Editoroberflächen
 
 - [useLayerDrag](./use-layer-drag)
 - [useInlineRename](./use-inline-rename)
@@ -36,10 +33,9 @@ Diese APIs sind öffentlich, aber spezialisierter als die Haupt-Komponenten- und
 - [useViewportKind](./use-viewport-kind)
 - [toolCursor](./tool-cursor)
 
-## Primitiv-Kontext-Hilfsmittel
+## Komponentenkontext
 
 - [useCanvasContext](./use-canvas-context)
 - [useLayerTree](./use-layer-tree)
 - [useToolbar](./use-toolbar)
 - [usePropertyList](./use-property-list)
-- [useScrubInput](./use-scrub-input)

@@ -1,8 +1,32 @@
-import type { Canvas, ImageFilter, MaskFilter } from 'canvaskit-wasm'
+import type { Canvas, ImageFilter, MaskFilter, Path } from '@open-pencil/canvaskit'
+import { readEffectiveFigmaRawField } from '@open-pencil/fig'
+import type { Effect, SceneNode } from '@open-pencil/scene-graph'
+import { blurSigma, type VisualBounds } from '@open-pencil/scene-graph/geometry'
+import type { Color, Vector } from '@open-pencil/scene-graph/primitives'
 
-import type { SceneNode } from '#core/scene-graph'
+import { ResourceCache } from '#core/cache/resource'
+import { BLACK } from '#core/constants'
 
+import { isPlainRamp, makeProgressiveBlur, progressiveBlurRamp } from './blur/progressive'
 import type { SkiaRenderer } from './renderer'
+
+/**
+ * Filters a renderer keeps between frames, by their parameters: shadows and blurs reuse one across
+ * every node and frame that shares them. Bounded, so a slider dragged through hundreds of values
+ * frees the ones it passed rather than keeping them for the session.
+ */
+const MAX_CACHED_FILTERS = 256
+
+export type ImageFilterCache = ResourceCache<string, ImageFilter>
+export type MaskFilterCache = ResourceCache<number, MaskFilter>
+
+export function createImageFilterCache(): ImageFilterCache {
+  return new ResourceCache({ maxEntries: MAX_CACHED_FILTERS, dispose: (filter) => filter.delete() })
+}
+
+export function createMaskFilterCache(): MaskFilterCache {
+  return new ResourceCache({ maxEntries: MAX_CACHED_FILTERS, dispose: (filter) => filter.delete() })
+}
 
 export function getCachedDropShadow(
   r: SkiaRenderer,
@@ -10,62 +34,102 @@ export function getCachedDropShadow(
   dy: number,
   sigma: number,
   color: Float32Array
-): ImageFilter {
+): ImageFilter | null {
   const key = `ds:${dx},${dy},${sigma},${color[0]},${color[1]},${color[2]},${color[3]}`
-  let filter = r.imageFilterCache.get(key)
-  if (!filter) {
-    filter = r.ck.ImageFilter.MakeDropShadowOnly(dx, dy, sigma, sigma, color, null)
-    r.imageFilterCache.set(key, filter)
-  }
+  return cachedImageFilter(r, key, () =>
+    r.ck.ImageFilter.MakeDropShadowOnly(dx, dy, sigma, sigma, color, null)
+  )
+}
+
+export function getCachedBlur(r: SkiaRenderer, sigma: number): ImageFilter | null {
+  return cachedImageFilter(r, `blur:${sigma}`, () =>
+    r.ck.ImageFilter.MakeBlur(sigma, sigma, r.ck.TileMode.Clamp, null)
+  )
+}
+
+export function getCachedDecalBlur(r: SkiaRenderer, sigma: number): ImageFilter | null {
+  return cachedImageFilter(r, `dblur:${sigma}`, () =>
+    r.ck.ImageFilter.MakeBlur(sigma, sigma, r.ck.TileMode.Decal, null)
+  )
+}
+
+/**
+ * The filter a layer or background blur draws with over a `width` × `height` layer: a plain blur,
+ * or Figma's progressive one with its points mapped by `toFilter` into the filter's coordinates.
+ * `bounds` holds what it blurs, in those coordinates, so each level blurs only its share.
+ */
+export function getCachedLayerBlur(
+  r: SkiaRenderer,
+  effect: Pick<Effect, 'radius' | 'progressive'>,
+  width: number,
+  height: number,
+  bounds: VisualBounds | null,
+  toFilter?: (point: Vector) => Vector
+): ImageFilter | null {
+  if (!effect.progressive) return r.getCachedBlur(blurSigma(effect.radius))
+  const ramp = progressiveBlurRamp(
+    effect.progressive,
+    effect.radius,
+    width,
+    height,
+    bounds,
+    toFilter
+  )
+  if (isPlainRamp(ramp)) return r.getCachedBlur(ramp.endSigma)
+  const box = bounds ? `${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}` : 'unbounded'
+  const key = `pblur:${ramp.start.x},${ramp.start.y},${ramp.end.x},${ramp.end.y},${ramp.startSigma},${ramp.endSigma}:${box}`
+  return cachedImageFilter(r, key, () => makeProgressiveBlur(r.ck, ramp, r.ck.TileMode.Clamp))
+}
+
+/** CanvasKit makes no filter for a blur too small to draw; a paint takes null as none. */
+export function getCachedMaskBlur(r: SkiaRenderer, sigma: number): MaskFilter | null {
+  const cached = r.maskFilterCache.get(sigma)
+  if (cached) return cached
+  // Typed as always made; at runtime a sigma too small to blur makes none.
+  const filter = r.ck.MaskFilter.MakeBlur(r.ck.BlurStyle.Normal, sigma, true) as MaskFilter | null
+  if (filter) r.maskFilterCache.set(sigma, filter)
   return filter
 }
 
-export function getCachedBlur(r: SkiaRenderer, sigma: number): ImageFilter {
-  const key = `blur:${sigma}`
-  let filter = r.imageFilterCache.get(key)
-  if (!filter) {
-    filter = r.ck.ImageFilter.MakeBlur(sigma, sigma, r.ck.TileMode.Clamp, null)
-    r.imageFilterCache.set(key, filter)
-  }
+function cachedImageFilter(
+  r: SkiaRenderer,
+  key: string,
+  make: () => ImageFilter | null
+): ImageFilter | null {
+  const cached = r.imageFilterCache.get(key)
+  if (cached) return cached
+  const filter = make()
+  if (filter) r.imageFilterCache.set(key, filter)
   return filter
 }
 
-export function getCachedDecalBlur(r: SkiaRenderer, sigma: number): ImageFilter {
-  const key = `dblur:${sigma}`
-  let filter = r.imageFilterCache.get(key)
-  if (!filter) {
-    filter = r.ck.ImageFilter.MakeBlur(sigma, sigma, r.ck.TileMode.Decal, null)
-    r.imageFilterCache.set(key, filter)
-  }
-  return filter
-}
-
-export function getCachedMaskBlur(r: SkiaRenderer, sigma: number): MaskFilter {
-  let filter = r.maskFilterCache.get(sigma)
-  if (!filter) {
-    filter = r.ck.MaskFilter.MakeBlur(r.ck.BlurStyle.Normal, sigma, true)
-    r.maskFilterCache.set(sigma, filter)
-  }
-  return filter
-}
-
+/**
+ * Blurs what lies behind the layer, inside its outline, or inside `shape` when the layer's outline
+ * is not its box, as with a boolean's result.
+ */
 export function applyClippedBlur(
   r: SkiaRenderer,
   canvas: Canvas,
   node: SceneNode,
-  rect: Float32Array,
-  hasRadius: boolean,
-  sigma: number
+  effect: Pick<Effect, 'radius' | 'progressive'>,
+  shape: Path | null = null
 ): void {
+  const rect = r.ck.LTRBRect(0, 0, node.width, node.height)
   // Entry guard: reset shared paint to known state
   r.effectLayerPaint.setImageFilter(null)
   r.effectLayerPaint.setColorFilter(null)
   r.effectLayerPaint.setBlendMode(r.ck.BlendMode.SrcOver)
 
   canvas.save()
-  r.clipNodeShape(canvas, node, rect, hasRadius)
-  r.effectLayerPaint.setImageFilter(r.getCachedBlur(sigma))
-  canvas.saveLayer(r.effectLayerPaint)
+  if (shape) canvas.clipPath(shape, r.ck.ClipOp.Intersect, true)
+  else r.clipNodeShape(canvas, node)
+  const filter = r.getCachedLayerBlur(effect, node.width, node.height, {
+    minX: 0,
+    minY: 0,
+    maxX: node.width,
+    maxY: node.height
+  })
+  canvas.saveLayer(undefined, rect, filter, undefined, r.ck.TileMode.Clamp)
   canvas.restore()
   // Exit guard: ensure shared paint is in clean state
   r.effectLayerPaint.setImageFilter(null)
@@ -74,163 +138,76 @@ export function applyClippedBlur(
   canvas.restore()
 }
 
-import { nodeHasRadius } from './shapes'
-export { nodeHasRadius }
+const MAX_RAW_NOISE_CELLS = 12_000
 
-function drawShapeDropShadow(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  node: SceneNode,
-  effect: SceneNode['effects'][number],
-  hasRadius: boolean,
-  shadowShapeChild?: SceneNode | null
-): void {
-  const sp = effect.spread
-  const shapeNode = shadowShapeChild ?? node
-  const shapeHasRadius = shadowShapeChild ? nodeHasRadius(shadowShapeChild) : hasRadius
-  const strokeShadow =
-    !shadowShapeChild && !node.fills.some((fill) => fill.visible) && node.strokeGeometry.length > 0
-      ? r.getStrokeGeometry(node)
-      : null
-
-  r.auxFill.setColor(r.color4f(effect.color.r, effect.color.g, effect.color.b, effect.color.a))
-  r.auxFill.setMaskFilter(r.getCachedMaskBlur(effect.radius / 2))
-  r.auxFill.setImageFilter(null)
-  canvas.save()
-  canvas.translate(
-    effect.offset.x + (shadowShapeChild?.x ?? 0),
-    effect.offset.y + (shadowShapeChild?.y ?? 0)
-  )
-  if (strokeShadow) {
-    for (const path of strokeShadow) canvas.drawPath(path, r.auxFill)
-  } else if (shapeNode.type === 'ELLIPSE') {
-    canvas.drawOval(r.ltrb(-sp, -sp, shapeNode.width + sp, shapeNode.height + sp), r.auxFill)
-  } else if (shapeHasRadius) {
-    canvas.drawRRect(r.makeRRectWithSpread(shapeNode, sp), r.auxFill)
-  } else {
-    canvas.drawRect(r.ltrb(-sp, -sp, shapeNode.width + sp, shapeNode.height + sp), r.auxFill)
-  }
-  canvas.restore()
-  r.auxFill.setMaskFilter(null)
+interface RawNoiseEffect {
+  type: 'NOISE'
+  visible?: boolean
+  color?: Color
+  secondaryColor?: Color
+  opacity?: number
+  density?: number
+  noiseSize?: Vector
+  noiseType?: 'MONOTONE' | 'DUOTONE' | 'MULTITONE'
 }
 
-function renderDropShadow(
-  r: SkiaRenderer,
-  canvas: Canvas,
-  node: SceneNode,
-  effect: SceneNode['effects'][number],
-  hasRadius: boolean,
-  shadowShapeChild?: SceneNode | null
-): void {
-  if (node.type !== 'TEXT') {
-    drawShapeDropShadow(r, canvas, node, effect, hasRadius, shadowShapeChild)
-    return
-  }
-
-  const shadowColor = r.ck.Color4f(effect.color.r, effect.color.g, effect.color.b, effect.color.a)
-  const dropFilter = r.getCachedDropShadow(
-    effect.offset.x,
-    effect.offset.y,
-    effect.radius / 2,
-    shadowColor
+function rawNoiseEffects(node: SceneNode): RawNoiseEffect[] {
+  const source = (node as Partial<SceneNode>).source
+  const effects = source ? readEffectiveFigmaRawField(node, 'effects') : undefined
+  if (!Array.isArray(effects)) return []
+  return effects.filter(
+    (effect): effect is RawNoiseEffect =>
+      effect !== null &&
+      typeof effect === 'object' &&
+      'type' in effect &&
+      effect.type === 'NOISE' &&
+      ('visible' in effect ? effect.visible !== false : true)
   )
-  r.effectLayerPaint.setImageFilter(dropFilter)
-  canvas.saveLayer(r.effectLayerPaint)
-  r.renderText(canvas, node)
-  canvas.restore()
 }
 
-export function renderEffects(
+function seededNoise(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453
+  return x - Math.floor(x)
+}
+
+function renderNoiseEffect(
   r: SkiaRenderer,
   canvas: Canvas,
   node: SceneNode,
-  rect: Float32Array,
-  hasRadius: boolean,
-  pass: 'behind' | 'front',
-  shadowShapeChild?: SceneNode | null
+  effect: RawNoiseEffect
 ): void {
-  for (const effect of node.effects) {
-    if (!effect.visible) continue
-
-    if (pass === 'behind' && effect.type === 'DROP_SHADOW') {
-      renderDropShadow(r, canvas, node, effect, hasRadius, shadowShapeChild)
-    }
-
-    if (pass === 'behind' && effect.type === 'BACKGROUND_BLUR') {
-      r.applyClippedBlur(canvas, node, rect, hasRadius, effect.radius / 2)
-    }
-
-    if (pass === 'front' && effect.type === 'INNER_SHADOW') {
-      if (node.type === 'TEXT') {
-        r.effectLayerPaint.setImageFilter(r.getCachedDecalBlur(effect.radius / 2))
-        r.effectLayerPaint.setColorFilter(
-          r.ck.ColorFilter.MakeBlend(
-            r.ck.Color4f(effect.color.r, effect.color.g, effect.color.b, effect.color.a),
-            r.ck.BlendMode.SrcIn
-          )
+  const density = Math.max(0, Math.min(1, effect.density ?? 0.3))
+  const requestedStep = Math.max(2, Math.round((effect.noiseSize?.x ?? 0.5) * 8))
+  const boundedStep = Math.ceil(Math.sqrt((node.width * node.height) / MAX_RAW_NOISE_CELLS))
+  const step = Math.max(requestedStep, boundedStep)
+  const color = effect.color ?? BLACK
+  const opacity = effect.opacity ?? color.a
+  const paint = new r.ck.Paint()
+  try {
+    paint.setAntiAlias(false)
+    canvas.save()
+    r.clipNodeShape(canvas, node)
+    for (let y = 0; y < node.height; y += step) {
+      for (let x = 0; x < node.width; x += step) {
+        const value = seededNoise((x + 1) * 73856093 + (y + 1) * 19349663)
+        if (value > density) continue
+        const alpha = Math.max(0, Math.min(1, opacity * (0.35 + value * 0.65)))
+        paint.setColorComponents(color.r, color.g, color.b, alpha)
+        canvas.drawRect(
+          r.ck.LTRBRect(x, y, Math.min(node.width, x + 1), Math.min(node.height, y + 1)),
+          paint
         )
-        canvas.saveLayer(r.effectLayerPaint)
-        canvas.save()
-        canvas.translate(effect.offset.x, effect.offset.y)
-        r.renderText(canvas, node)
-        canvas.restore()
-        canvas.restore()
-        r.effectLayerPaint.setColorFilter(null)
-        continue
       }
-      const sp = effect.spread
-      r.auxFill.setColor(
-        r.ck.Color4f(effect.color.r, effect.color.g, effect.color.b, effect.color.a)
-      )
-      r.auxFill.setImageFilter(r.getCachedDecalBlur(effect.radius / 2))
-
-      canvas.save()
-      r.clipNodeShape(canvas, node, rect, hasRadius)
-
-      const expand = effect.radius * 2
-      const big = r.ck.LTRBRect(
-        -expand + effect.offset.x,
-        -expand + effect.offset.y,
-        node.width + expand + effect.offset.x,
-        node.height + expand + effect.offset.y
-      )
-      const bigPath = new r.ck.Path()
-      bigPath.addRect(big)
-      if (node.type === 'ELLIPSE') {
-        const innerPath = new r.ck.Path()
-        const offsetRect = r.ck.LTRBRect(
-          effect.offset.x + sp,
-          effect.offset.y + sp,
-          node.width + effect.offset.x - sp,
-          node.height + effect.offset.y - sp
-        )
-        innerPath.addOval(offsetRect)
-        bigPath.op(innerPath, r.ck.PathOp.Difference)
-        innerPath.delete()
-      } else if (hasRadius) {
-        const innerPath = new r.ck.Path()
-        innerPath.addRRect(
-          r.makeRRectWithOffset(node, effect.offset.x + sp, effect.offset.y + sp, -sp)
-        )
-        bigPath.op(innerPath, r.ck.PathOp.Difference)
-        innerPath.delete()
-      } else {
-        const innerPath = new r.ck.Path()
-        innerPath.addRect(
-          r.ck.LTRBRect(
-            effect.offset.x + sp,
-            effect.offset.y + sp,
-            node.width + effect.offset.x - sp,
-            node.height + effect.offset.y - sp
-          )
-        )
-        bigPath.op(innerPath, r.ck.PathOp.Difference)
-        innerPath.delete()
-      }
-      canvas.drawPath(bigPath, r.auxFill)
-      bigPath.delete()
-      canvas.restore()
-      r.auxFill.setImageFilter(null)
     }
+    canvas.restore()
+  } finally {
+    paint.delete()
+  }
+}
+
+/** Draws the raw Figma noise effects a node carries, which the scene graph does not model. */
+export function renderNoiseEffects(r: SkiaRenderer, canvas: Canvas, node: SceneNode): void {
+  for (const effect of rawNoiseEffects(node)) {
+    renderNoiseEffect(r, canvas, node, effect)
   }
 }

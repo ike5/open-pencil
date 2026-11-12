@@ -5,14 +5,14 @@ description: Создание моделей меню приложения и х
 
 # useMenuModel
 
-`useMenuModel()` строит высокоуровневые структуры меню поверх команд редактора и состояния выделения.
+`useMenuModel()` создаёт готовые структуры меню на основе команд редактора и текущего выделения.
 
-Полезен, когда нужны готовые к рендерингу группы меню вместо ручной компоновки команд.
+Используйте его, если компоненту меню удобнее получить уже сгруппированные пункты, чем собирать их из отдельных команд.
 
 ## Использование
 
 ```ts
-import { useMenuModel } from '@open-pencil/vue'
+import { useMenuModel } from '@open-pencil/vue/editor/menu-model'
 
 const { appMenu, canvasMenu, selectionLabelMenu } = useMenuModel()
 ```
@@ -23,11 +23,11 @@ const { appMenu, canvasMenu, selectionLabelMenu } = useMenuModel()
 const { canvasMenu } = useMenuModel()
 ```
 
-Рендерите `canvasMenu.value` в ваш компонент контекстного меню.
+Передайте `canvasMenu.value` своему компоненту контекстного меню.
 
 ## Практические примеры
 
-### Верхнее меню в стиле приложения
+### Главное меню приложения
 
 `appMenu` группирует пункты в:
 

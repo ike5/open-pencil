@@ -1,37 +1,40 @@
 ---
-title: Démarrage rapide SDK
-description: Configurez @open-pencil/vue avec createEditor, provideEditor et un canvas.
+title: Premiers pas avec le SDK
+description: Connectez @open-pencil/vue, créez un éditeur et configurez la zone de travail.
 ---
 
-# Démarrage rapide SDK
+# Premiers pas avec le SDK
 
 ## Installation
 
 ```bash
-bun add @open-pencil/core @open-pencil/vue canvaskit-wasm
+bun add @open-pencil/core @open-pencil/vue @open-pencil/canvaskit
 ```
 
-Le SDK est hébergé dans le monorepo et également publié sous le nom `@open-pencil/vue`.
+Le canevas charge à l’exécution `canvaskit.wasm` depuis `@open-pencil/canvaskit/dist/` et les polices fournies ; la manière de les servir est décrite dans [Serve the engine’s files](/programmable/sdk/getting-started#serve-the-engine-s-files) (en anglais).
+
+Le SDK se trouve dans le monorepo OpenPencil et est publié sous forme de package `@open-pencil/vue`.
 
 ```ts
-import { createEditor } from '@open-pencil/core/editor'
-import { provideEditor, useCanvas } from '@open-pencil/vue'
+import { createEditor } from '@open-pencil/core'
+import { provideEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
 ```
 
-## Modèle mental
+## Couches de l'application
 
-Il y a trois couches :
+Une application basée sur le SDK se compose de trois couches :
 
-1. `@open-pencil/core` — moteur d'édition indépendant du framework
-2. `@open-pencil/vue` — composables Vue et primitives headless
-3. votre application — styles, routage, flux de fichiers, UI spécifique au produit
+1. `@open-pencil/core` — le moteur de l'éditeur, indépendant du framework ;
+2. `@open-pencil/vue` — les composables et composants sans styles pour Vue ;
+3. l'application — la présentation, le routage, la gestion des fichiers et l'interface propre au produit.
 
 ## Configuration minimale
 
-### 1. Créer un éditeur
+### 1. Créez un éditeur
 
 ```ts
-import { createEditor } from '@open-pencil/core/editor'
+import { createEditor } from '@open-pencil/core'
 
 const editor = createEditor({
   width: 1200,
@@ -39,13 +42,13 @@ const editor = createEditor({
 })
 ```
 
-### 2. Le fournir à Vue
+### 2. Rendez l'éditeur accessible aux composants descendants
 
 ```vue
 <script setup lang="ts">
 import { provideEditor } from '@open-pencil/vue'
 
-import type { Editor } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
 
 const props = defineProps<{
   editor: Editor
@@ -59,15 +62,16 @@ provideEditor(props.editor)
 </template>
 ```
 
-Vous pouvez voir ceci comme la couche provider de l'arbre éditeur. La documentation préfère `provideEditor()` directement car c'est la vraie surface d'API actuelle.
+`provideEditor()` rend l'instance de l'éditeur accessible à tous les composants situés plus bas dans l'arbre. La documentation appelle directement cette fonction, car elle fait partie de l'API publique actuelle.
 
-### 3. Attacher un canvas
+### 3. Connectez la zone de travail
 
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { useCanvas, useEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -82,22 +86,25 @@ useCanvas(canvasRef, editor)
 
 ## Utiliser les composables
 
-Une fois l'éditeur fourni, les composants enfants peuvent lire la sélection et émettre des commandes :
+Après l'appel à `provideEditor()`, les composants descendants peuvent consulter la sélection et exécuter des commandes de l'éditeur :
 
 ```ts
-import { useEditorCommands, useSelectionState } from '@open-pencil/vue'
+import { useEditorCommands } from '@open-pencil/vue/editor/commands'
+import { useSelectionState } from '@open-pencil/vue/editor/selection-state'
 
 const selection = useSelectionState()
 const commands = useEditorCommands()
 ```
 
-## Exemple de base
+## Exemple simple
 
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { useCanvas, useEditor, useSelectionState } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
+import { useSelectionState } from '@open-pencil/vue/editor/selection-state'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -114,7 +121,7 @@ useCanvas(canvasRef, editor, {
   <div class="grid h-full grid-rows-[1fr_auto]">
     <canvas ref="canvasRef" class="size-full" />
     <div class="border-t px-3 py-2 text-xs text-muted">
-      Sélectionné : {{ selectedCount }}
+      Sélection : {{ selectedCount }}
     </div>
   </div>
 </template>
@@ -123,7 +130,7 @@ useCanvas(canvasRef, editor, {
 ## Étapes suivantes
 
 - [Architecture](./architecture)
-- [Référence API](./api/)
+- [Référence de l'API](./api/)
 - [useEditor](./api/composables/use-editor)
 - [useCanvas](./api/composables/use-canvas)
 - [useI18n](./api/composables/use-i18n)

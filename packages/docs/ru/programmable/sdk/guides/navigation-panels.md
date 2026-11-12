@@ -1,58 +1,64 @@
 ---
-title: Навигационные панели
-description: Создавайте боковые панели для страниц и слоёв с PageListRoot, LayerTreeRoot и состоянием выделения.
+title: Панели навигации
+description: Боковые панели со страницами и слоями на основе PageListRoot, LayerTreeRoot и состояния выделения.
 ---
 
-# Навигационные панели
+# Панели навигации
 
-Боковые панели OpenPencil обычно решают две задачи:
+На боковых панелях OpenPencil обычно находятся:
 
-- навигация по страницам
-- навигация по слоям
+- список страниц;
+- дерево слоёв.
 
-Vue SDK предоставляет headless-примитивы для обеих.
+Vue SDK предоставляет компоненты без встроенного оформления для обеих задач.
 
-## Навигация по страницам
+## Страницы
 
 Используйте `PageListRoot` или `usePageList()`.
 
 ```vue
-<PageListRoot v-slot="{ pages, currentPageId, switchPage, addPage }">
+<PageListRoot v-slot="{ pages, currentPageId, actions }">
   <div>
-    <button v-for="page in pages" :key="page.id" @click="switchPage(page.id)">
+    <button v-for="page in pages" :key="page.id" @click="actions.switch(page.id)">
       {{ page.name }}
     </button>
-    <button @click="addPage()">Новая страница</button>
+    <button @click="actions.add()">Новая страница</button>
   </div>
 </PageListRoot>
 ```
 
-## Навигация по слоям
+## Слои
 
-Используйте `LayerTreeRoot`, когда хотите структуру дерева, управляемую SDK, но представление на стороне приложения.
+Используйте `LayerTreeRoot`, если SDK должен управлять структурой дерева, а приложение — его внешним видом.
 
 ```vue
-<LayerTreeRoot v-slot="{ items, selectedIds, select, toggleExpand, getKey, getChildren }">
-  <TreeView
-    :items="items"
-    :selected-ids="selectedIds"
-    :get-key="getKey"
-    :get-children="getChildren"
-    @select="select"
-    @toggle-expand="toggleExpand"
-  />
+<LayerTreeRoot v-slot="{ visibleRows }">
+  <LayerTreeItem
+    v-for="row in visibleRows"
+    :key="row.node.id"
+    v-slot="{ node, isSelected, padLeft, actions }"
+    :node="row.node"
+    :level="row.level"
+    :has-children="row.hasChildren"
+  >
+    <button
+      :data-selected="isSelected"
+      :style="{ paddingLeft: padLeft }"
+      @click="actions.select($event.shiftKey)"
+    >
+      {{ node.name }}
+    </button>
+  </LayerTreeItem>
 </LayerTreeRoot>
 ```
 
-## Практический паттерн
+## Типичная компоновка
 
-Распространённый макет:
+- список страниц в верхней части боковой панели;
+- дерево слоёв под ним;
+- дополнительные сведения и поле переименования непосредственно в компонентах строк.
 
-- страницы вверху боковой панели
-- слои ниже
-- детали или элементы управления для переименования встроены в компоненты строк
-
-## Связанные API
+## См. также
 
 - [usePageList](../api/composables/use-page-list)
 - [PageListRoot](../api/components/page-list-root)

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { expectDefined } from '#tests/helpers/assert'
+import { expectDefined } from '@open-pencil/test-support/assert'
+
 import { CanvasHelper } from '#tests/helpers/canvas'
 import { getSelectedIds, getPageChildren, getSelectedNode, getNodeById } from '#tests/helpers/store'
 
@@ -11,7 +12,7 @@ test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
-  await page.goto('/')
+  await page.goto('/?test')
   canvas = new CanvasHelper(page)
   await canvas.waitForInit()
   await canvas.clearCanvas()
@@ -104,7 +105,7 @@ test('resize corner handle drag increases node dimensions', async () => {
   })
   expect(viewport).not.toBeNull()
 
-  const box = await page.locator('[data-test-id="canvas-element"]').boundingBox()
+  const box = await page.getByTestId('canvas-element').boundingBox()
   if (!box) throw new Error('No canvas')
 
   const hx = box.x + expectDefined(viewport, 'viewport state').handleX
@@ -123,6 +124,47 @@ test('resize corner handle drag increases node dimensions', async () => {
   expect(expectDefined(after, 'selected node after').height).toBeGreaterThan(
     expectDefined(before, 'selected node before').height + 20
   )
+  canvas.assertNoErrors()
+})
+
+test('resize snapping preferences control pixel alignment and Control bypass', async () => {
+  await canvas.clearCanvas()
+  await page.evaluate(() => {
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    store.state.snappingPreferences = { geometry: true, objects: false, pixelGrid: false }
+    const id = store.createShape('RECTANGLE', 100.25, 100.25, 100, 100)
+    store.select([id])
+  })
+  await canvas.waitForRender()
+  const box = await page.getByTestId('canvas-element').boundingBox()
+  if (!box) throw new Error('No canvas')
+
+  await page.mouse.move(box.x + 200.25, box.y + 200.25)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 206.25, box.y + 207.25, { steps: 5 })
+  await page.mouse.up()
+  expect(await getSelectedNode(page)).toMatchObject({ width: 106, height: 107 })
+
+  await page.evaluate(() => {
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    store.state.snappingPreferences.pixelGrid = true
+  })
+  await page.mouse.move(box.x + 206.25, box.y + 207.25)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 212.25, box.y + 214.25, { steps: 5 })
+  await page.mouse.up()
+  // Snapping rounds the size, as Figma does, and the layer keeps its fractional position.
+  expect(await getSelectedNode(page)).toMatchObject({ x: 100.25, width: 112, height: 114 })
+
+  await page.mouse.move(box.x + 212, box.y + 214)
+  await page.mouse.down()
+  await page.keyboard.down('Control')
+  await page.mouse.move(box.x + 218, box.y + 221, { steps: 5 })
+  await page.keyboard.up('Control')
+  await page.mouse.up()
+  expect(await getSelectedNode(page)).toMatchObject({ width: 118, height: 121 })
   canvas.assertNoErrors()
 })
 
@@ -152,7 +194,7 @@ test('rotation handle drag rotates node', async () => {
   })
   expect(viewport).not.toBeNull()
 
-  const box = await page.locator('[data-test-id="canvas-element"]').boundingBox()
+  const box = await page.getByTestId('canvas-element').boundingBox()
   if (!box) throw new Error('No canvas')
 
   const rx = box.x + expectDefined(viewport, 'viewport state').cx
@@ -326,7 +368,7 @@ test('rotation drag exposes live rotation preview state', async () => {
   })
   expect(viewport).not.toBeNull()
 
-  const box = await page.locator('[data-test-id="canvas-element"]').boundingBox()
+  const box = await page.getByTestId('canvas-element').boundingBox()
   if (!box) throw new Error('No canvas')
 
   const rx = box.x + expectDefined(viewport, 'viewport state').cx

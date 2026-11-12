@@ -1,24 +1,22 @@
 ---
 title: useLayout
-description: Работа с автолейаутом, размерами, отступами, выравниванием и треками сетки.
+description: Управление автоматической компоновкой, размерами, отступами, выравниванием и дорожками сетки.
 ---
 
 # useLayout
 
-`useLayout()` — основной компосабл управления для панелей, связанных с лейаутом.
+`useLayout()` предоставляет состояние и действия для панелей компоновки:
 
-Предоставляет состояние и действия для:
-
-- режима flex vs grid
-- размеров по ширине/высоте
-- отступов
-- выравнивания
-- редактирования треков шаблона сетки
+- выбор между flex и grid;
+- режимы ширины и высоты;
+- отступы;
+- выравнивание;
+- изменение дорожек grid template.
 
 ## Использование
 
 ```ts
-import { useLayout } from '@open-pencil/vue'
+import { useLayout } from '@open-pencil/vue/controls/layout'
 
 const layout = useLayout()
 ```
@@ -31,8 +29,9 @@ const {
   isFlex,
   widthSizing,
   heightSizing,
-  setWidthSizing,
-  setHeightSizing,
+  setAxisSizing,
+  updateAxisSize,
+  commitAxisSize,
 } = useLayout()
 ```
 
@@ -44,7 +43,7 @@ const {
 layout.toggleIndividualPadding()
 ```
 
-### Обновление треков сетки
+### Изменить дорожки grid
 
 ```ts
 layout.updateGridTrack('gridTemplateColumns', 0, { sizing: 'FIXED', value: 240 })

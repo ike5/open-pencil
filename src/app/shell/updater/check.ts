@@ -1,0 +1,67 @@
+import { check } from '@tauri-apps/plugin-updater'
+import { promiseTimeout } from '@vueuse/core'
+import type { Ref } from 'vue'
+
+import { appPreferences } from '@/app/settings/preferences/store'
+import { toast } from '@/app/shell/ui'
+import { canSelfUpdate } from '@/app/tauri/capabilities'
+
+import { updateFailureText, type UpdaterMessages } from './messages'
+import { openUpdaterWindow } from './window'
+
+export const STARTUP_UPDATE_CHECK_DELAY_MS = 2500
+
+interface UpdateCheckOptions {
+  silent?: boolean
+  messages: Ref<UpdaterMessages>
+}
+
+let startupCheckStarted = false
+let updateCheckInFlight: Promise<void> | null = null
+
+export async function checkForAppUpdate(options: UpdateCheckOptions) {
+  // Off in the browser and in packages whose store delivers updates.
+  if (!canSelfUpdate()) return
+  if (updateCheckInFlight) return updateCheckInFlight
+
+  const { silent = false, messages } = options
+  updateCheckInFlight = runUpdateCheck(silent, messages).finally(() => {
+    updateCheckInFlight = null
+  })
+  return updateCheckInFlight
+}
+
+export async function scheduleStartupUpdateCheck(messages: Ref<UpdaterMessages>): Promise<void> {
+  if (startupCheckStarted || !canSelfUpdate()) return
+  startupCheckStarted = true
+  await promiseTimeout(STARTUP_UPDATE_CHECK_DELAY_MS)
+  // Read after the delay so a switch flipped during it still skips the request.
+  // Check for Updates calls checkForAppUpdate and does not look at this preference.
+  if (appPreferences.value.updates.checkOnStartup) {
+    await checkForAppUpdate({ silent: true, messages })
+  }
+}
+
+/** Lets tests schedule the launch check more than once. */
+export function resetStartupUpdateCheckForTests(): void {
+  startupCheckStarted = false
+}
+
+// The main window only learns whether an update exists; the Software Update
+// window checks again for its own handle, then shows the notes and installs.
+async function runUpdateCheck(silent: boolean, messages: Ref<UpdaterMessages>) {
+  try {
+    const update = await check()
+    if (!update) {
+      if (!silent) toast.info(messages.value.upToDate)
+      return
+    }
+    await update.close()
+    await openUpdaterWindow(messages.value.windowTitle)
+  } catch (error) {
+    if (!silent) {
+      const message = error instanceof Error ? error.message : String(error)
+      toast.warning(updateFailureText(messages.value, 'check', message))
+    }
+  }
+}

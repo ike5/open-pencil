@@ -8,11 +8,13 @@ description: Browse node trees, search by name or type, and dig into properties 
 The CLI lets you explore design documents without opening the editor. Every command also works on the live app — just omit the file argument.
 
 ::: tip Install
+
 ```sh
-bun add -g @open-pencil/cli
+npm install -g @open-pencil/cli
 # or
-brew install open-pencil/tap/open-pencil
+bun add -g @open-pencil/cli
 ```
+
 :::
 
 ## Document Info
@@ -20,15 +22,29 @@ brew install open-pencil/tap/open-pencil
 Get a quick overview — page count, total nodes, fonts used, file size:
 
 ```sh
-open-pencil info design.fig
+openpencil info design.fig
 ```
+
+## Font Diagnostics
+
+Report requested font faces, available sources, substitutions, and affected layers:
+
+```sh
+openpencil fonts design.fig
+openpencil fonts design.fig --json
+openpencil fonts --document-id tab-123 --page-id 0:1
+```
+
+File mode checks all document pages using the CLI host's available fonts without downloading online fonts. Live mode reports the targeted app document/page, whose loaded fonts may differ from the CLI host. Faces are reported as `available`, `substituted`, or `unresolved`; JSON output includes `faithful`, `faces`, and `issues`.
+
+Use [export font policies](./exporting#font-substitution-policy) to warn about or reject substitutions during file-backed raster and PDF exports.
 
 ## Node Tree
 
 Print the full node hierarchy:
 
 ```sh
-open-pencil tree design.fig
+openpencil tree design.fig
 ```
 
 ```
@@ -45,13 +61,13 @@ open-pencil tree design.fig
 Search by type:
 
 ```sh
-open-pencil find design.fig --type TEXT
+openpencil find design.fig --type TEXT
 ```
 
 Search by name:
 
 ```sh
-open-pencil find design.fig --name "Button"
+openpencil find design.fig --name "Button"
 ```
 
 Both flags can be combined to narrow results further.
@@ -61,7 +77,7 @@ Both flags can be combined to narrow results further.
 Use XPath selectors to find nodes by type, attributes, and tree structure:
 
 ```sh
-open-pencil query design.fig "//FRAME"
+openpencil query design.fig "//FRAME"
 ```
 
 ### Useful patterns
@@ -69,34 +85,34 @@ open-pencil query design.fig "//FRAME"
 **By type:**
 
 ```sh
-open-pencil query design.fig "//TEXT"                    # All text nodes
-open-pencil query design.fig "//COMPONENT"               # All components
-open-pencil query design.fig "//INSTANCE"                # All instances
+openpencil query design.fig "//TEXT"                    # All text nodes
+openpencil query design.fig "//COMPONENT"               # All components
+openpencil query design.fig "//INSTANCE"                # All instances
 ```
 
 **By attributes:**
 
 ```sh
-open-pencil query design.fig "//FRAME[@width < 300]"                # Frames under 300px wide
-open-pencil query design.fig "//*[@cornerRadius > 0]"               # Rounded corners
-open-pencil query design.fig "//*[@visible = false]"                # Hidden nodes
-open-pencil query design.fig "//TEXT[@fontSize >= 24]"              # Large text
-open-pencil query design.fig "//*[@opacity < 1]"                    # Semi-transparent nodes
+openpencil query design.fig "//FRAME[@width < 300]"                # Frames under 300px wide
+openpencil query design.fig "//*[@cornerRadius > 0]"               # Rounded corners
+openpencil query design.fig "//*[@visible = false]"                # Hidden nodes
+openpencil query design.fig "//TEXT[@fontSize >= 24]"              # Large text
+openpencil query design.fig "//*[@opacity < 1]"                    # Semi-transparent nodes
 ```
 
 **By name and text content:**
 
 ```sh
-open-pencil query design.fig "//TEXT[contains(@name, 'Button')]"    # Name contains 'Button'
-open-pencil query design.fig "//TEXT[contains(@text, 'Hello')]"     # Text content contains 'Hello'
+openpencil query design.fig "//TEXT[contains(@name, 'Button')]"    # Name contains 'Button'
+openpencil query design.fig "//TEXT[contains(@text, 'Hello')]"     # Text content contains 'Hello'
 ```
 
 **By hierarchy:**
 
 ```sh
-open-pencil query design.fig "//SECTION//TEXT"            # Text inside sections
-open-pencil query design.fig "//FRAME/TEXT"               # Direct text children of frames
-open-pencil query design.fig "//COMPONENT_SET//INSTANCE"  # Instances inside component sets
+openpencil query design.fig "//SECTION//TEXT"            # Text inside sections
+openpencil query design.fig "//FRAME/TEXT"               # Direct text children of frames
+openpencil query design.fig "//COMPONENT_SET//INSTANCE"  # Instances inside component sets
 ```
 
 ### Queryable attributes
@@ -120,7 +136,7 @@ open-pencil query design.fig "//COMPONENT_SET//INSTANCE"  # Instances inside com
 Inspect all properties of a specific node by its ID:
 
 ```sh
-open-pencil node design.fig --id 1:23
+openpencil node design.fig --id 1:23
 ```
 
 ## Pages
@@ -128,7 +144,7 @@ open-pencil node design.fig --id 1:23
 List all pages in the document:
 
 ```sh
-open-pencil pages design.fig
+openpencil pages design.fig
 ```
 
 ## Variables
@@ -136,7 +152,7 @@ open-pencil pages design.fig
 List design variables and their collections:
 
 ```sh
-open-pencil variables design.fig
+openpencil variables design.fig
 ```
 
 ## Live App Mode
@@ -144,27 +160,32 @@ open-pencil variables design.fig
 When the desktop app is running, omit the file argument — the CLI connects via RPC and operates on the live canvas:
 
 ```sh
-open-pencil tree              # inspect the live document
-open-pencil eval -c "..."     # query the editor
+openpencil documents list    # list open document/page IDs
+openpencil tree              # inspect the active live document
+openpencil tree --document-id tab-123 --page-id 0:1
+openpencil eval --document-id tab-123 --page-id 0:1 -c "..."
 ```
+
+Use `openpencil documents list --json` in agent workflows, then pass `--document-id` and `--page-id` explicitly instead of relying on the visible active tab/page. To open, save, switch, and close documents, undo, change settings, or call any editor tool, see [Controlling the App](/programmable/cli/app-control).
 
 ## Lint Designs
 
 Check documents for naming, layout, structure, and accessibility issues:
 
 ```sh
-open-pencil lint design.fig
-open-pencil lint design.pen --preset strict
-open-pencil lint design.fig --rule color-contrast
-open-pencil lint design.fig --list-rules
+openpencil lint design.fig
+openpencil lint design.pen --preset strict
+openpencil lint design.fig --rule color-contrast
+openpencil lint design.fig --list-rules
+openpencil lint design.fig --fix -o fixed.fig
 ```
 
-Use `--json` for machine-readable output.
+Use `--json` for machine-readable output; each message carries its `fix` and `suggestions` as data. `--fix` applies the safe fixes — binding colors to the color variable they match and rounding geometry to whole pixels — and writes the result to the `.fig` file given with `-o`.
 
 ## JSON Output
 
 All commands support `--json` for machine-readable output — pipe into `jq`, feed to CI scripts, or process with other tools:
 
 ```sh
-open-pencil tree design.fig --json | jq '.[] | .name'
+openpencil tree design.fig --json | jq '.[] | .name'
 ```

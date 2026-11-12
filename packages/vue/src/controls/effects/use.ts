@@ -1,14 +1,19 @@
-import { ref } from 'vue'
+import { ref, shallowRef } from 'vue'
 
-import type { Effect } from '@open-pencil/core/scene-graph'
+import type { Effect } from '@open-pencil/scene-graph'
 
 import {
-  EFFECT_OPTIONS,
+  effectOptions,
   createDefaultEffect,
+  effectOptionsFor,
   createEffectControlActions,
   createEffectEditActions,
-  isShadow
+  blurKindChange,
+  isBlur,
+  isShadow,
+  type EffectEditSnapshot
 } from '#vue/controls/effects/helpers'
+import { useNodeProps } from '#vue/controls/node-props/use'
 import { useEditor } from '#vue/editor/context'
 
 /**
@@ -21,16 +26,28 @@ export function useEffectsControls() {
   const editor = useEditor()
 
   const expandedIndex = ref<number | null>(null)
-  const effectsBeforeScrub = ref<Effect[] | null>(null)
+  const { nodes } = useNodeProps()
+  const effectsBeforeScrub = shallowRef<Map<string, EffectEditSnapshot> | null>(null)
   const editActions = createEffectEditActions(editor, effectsBeforeScrub)
   const controlActions = createEffectControlActions(expandedIndex)
 
   return {
     expandedIndex,
-    effectOptions: EFFECT_OPTIONS,
+    /** The effect types, labelled in the current language. */
+    get effectOptions() {
+      return effectOptions()
+    },
+    effectOptionsFor,
     createDefaultEffect,
     isShadow,
-    ...editActions,
+    isBlur,
+    blurKindChange,
+    /** Previews a change to one effect on every selected layer. */
+    scrubEffect: (index: number, changes: Partial<Effect>) =>
+      editActions.scrubEffect(nodes.value, index, changes),
+    /** Applies a change to one effect on every selected layer in one undo step. */
+    commitEffect: (index: number, changes: Partial<Effect>) =>
+      editActions.commitEffect(nodes.value, index, changes),
     ...controlActions
   }
 }

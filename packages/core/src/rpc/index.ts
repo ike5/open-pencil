@@ -1,4 +1,4 @@
-export { executeRpcCommand, ALL_RPC_COMMANDS } from './commands'
+export { executeRPCCommand, ALL_RPC_COMMANDS } from './commands'
 export type {
   InfoResult,
   PageItem,
@@ -13,6 +13,8 @@ export type {
   NodeResult,
   VariablesArgs,
   VariablesResult,
+  TokensArgs,
+  TokensResult,
   AnalyzeColorsArgs,
   AnalyzeColorsResult,
   AnalyzeTypographyArgs,
@@ -21,5 +23,8 @@ export type {
   SpacingValue,
   AnalyzeClustersArgs,
   AnalyzeClustersResult,
-  TypographyStyle
+  AnalyzeOverlapsArgs,
+  AnalyzeOverlapsResult,
+  TypographyStyle,
+  AutomationDocumentSummary
 } from './commands'

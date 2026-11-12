@@ -1,7 +1,13 @@
-import type { SceneGraph, SceneNode } from '#core/scene-graph'
+import { sumBy } from 'es-toolkit'
+
+import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+
+import { ELLIPSIS } from '#core/text/ellipsis'
+import type { DocumentFontStatus } from '#core/text/font/status'
+import { prepareGraphFonts } from '#core/text/prepare'
 import { queryByXPath } from '#core/xpath'
 
-import type { RpcCommand } from './types'
+import type { RPCCommand } from './types'
 
 /** Walk descendants. Callback returns `false` to stop traversal. */
 function walkNodes(graph: SceneGraph, rootId: string, fn: (node: SceneNode) => boolean): boolean {
@@ -14,16 +20,18 @@ function walkNodes(graph: SceneGraph, rootId: string, fn: (node: SceneNode) => b
   return true
 }
 
-function countNodes(graph: SceneGraph, pageId: string): number {
+function countDescendants(graph: SceneGraph, rootId: string): number {
   let count = 0
-  const page = graph.getNode(pageId)
-  if (page)
-    for (const cid of page.childIds)
-      walkNodes(graph, cid, () => {
-        count++
-        return true
-      })
+  walkNodes(graph, rootId, () => {
+    count++
+    return true
+  })
   return count
+}
+
+function countNodes(graph: SceneGraph, pageId: string): number {
+  const page = graph.getNode(pageId)
+  return page ? sumBy(page.childIds, (id) => countDescendants(graph, id)) : 0
 }
 
 function nodeFrame(node: SceneNode) {
@@ -45,7 +53,7 @@ export interface InfoResult {
   pageCounts: Record<string, number>
 }
 
-export const infoCommand: RpcCommand<void, InfoResult> = {
+export const infoCommand: RPCCommand<void, InfoResult> = {
   name: 'info',
   execute: (graph) => {
     const pages = graph.getPages()
@@ -54,21 +62,30 @@ export const infoCommand: RpcCommand<void, InfoResult> = {
     const fonts = new Set<string>()
     const pageCounts: Record<string, number> = {}
 
+    const countNode = (node: SceneNode) => {
+      totalNodes++
+      types[node.type] = (types[node.type] ?? 0) + 1
+      if (node.fontFamily) fonts.add(node.fontFamily)
+      return true
+    }
+
     for (const page of pages) {
-      let pageCount = 0
+      const beforePage = totalNodes
       for (const cid of page.childIds) {
-        walkNodes(graph, cid, (node) => {
-          totalNodes++
-          pageCount++
-          types[node.type] = (types[node.type] ?? 0) + 1
-          if (node.fontFamily) fonts.add(node.fontFamily)
-          return true
-        })
+        walkNodes(graph, cid, countNode)
       }
-      pageCounts[page.name] = pageCount
+      pageCounts[page.name] = totalNodes - beforePage
     }
 
     return { pages: pages.length, totalNodes, types, fonts: [...fonts].sort(), pageCounts }
+  }
+}
+
+export const fontStatusCommand: RPCCommand<void, DocumentFontStatus> = {
+  name: 'font-status',
+  execute: async (graph) => {
+    const pageIds = graph.getPages().map((page) => page.id)
+    return prepareGraphFonts(graph, pageIds.length > 0 ? pageIds : [graph.rootId])
   }
 }
 
@@ -80,7 +97,7 @@ export interface PageItem {
   nodes: number
 }
 
-export const pagesCommand: RpcCommand<void, PageItem[]> = {
+export const pagesCommand: RPCCommand<void, PageItem[]> = {
   name: 'pages',
   execute: (graph) => {
     return graph.getPages().map((p) => ({ id: p.id, name: p.name, nodes: countNodes(graph, p.id) }))
@@ -132,7 +149,7 @@ export interface TreeResult {
   children: TreeNodeResult[]
 }
 
-export const treeCommand: RpcCommand<TreeArgs, TreeResult | { error: string }> = {
+export const treeCommand: RPCCommand<TreeArgs, TreeResult | { error: string }> = {
   name: 'tree',
   execute: (graph, args) => {
     const pages = graph.getPages()
@@ -169,7 +186,7 @@ export interface FindNodeResult {
   height: number
 }
 
-export const findCommand: RpcCommand<FindArgs, FindNodeResult[]> = {
+export const findCommand: RPCCommand<FindArgs, FindNodeResult[]> = {
   name: 'find',
   execute: (graph, args) => {
     const pages = graph.getPages()
@@ -228,7 +245,7 @@ export interface QueryNodeResult {
   height: number
 }
 
-export const queryCommand: RpcCommand<QueryArgs, QueryNodeResult[] | { error: string }> = {
+export const queryCommand: RPCCommand<QueryArgs, QueryNodeResult[] | { error: string }> = {
   name: 'query',
   execute: async (graph, args) => {
     try {
@@ -286,7 +303,7 @@ export interface NodeResult {
   boundVariables: Record<string, string>
 }
 
-export const nodeCommand: RpcCommand<NodeArgs, NodeResult | { error: string }> = {
+export const nodeCommand: RPCCommand<NodeArgs, NodeResult | { error: string }> = {
   name: 'node',
   execute: (graph, args) => {
     const node = graph.getNode(args.id)
@@ -321,7 +338,7 @@ export const nodeCommand: RpcCommand<NodeArgs, NodeResult | { error: string }> =
       textDirection: node.textDirection,
       text: (() => {
         if (!node.text.length) return null
-        if (node.text.length > 200) return node.text.slice(0, 200) + '…'
+        if (node.text.length > 200) return node.text.slice(0, 200) + ELLIPSIS
         return node.text
       })(),
       parent: parent ? { id: parent.id, name: parent.name, type: parent.type } : null,

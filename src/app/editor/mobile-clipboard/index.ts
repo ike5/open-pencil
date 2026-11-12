@@ -1,23 +1,34 @@
-import type { Editor, EditorState } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
 
-type MobileClipboardState = EditorState & { clipboardHtml: string }
+import {
+  getInMemoryClipboardHTML,
+  setInMemoryClipboardPayload
+} from '@/app/editor/clipboard/memory'
+import { pasteClipboardHTML } from '@/app/editor/clipboard/paste/content'
 
-export function createMobileClipboardActions(editor: Editor, state: MobileClipboardState) {
-  async function mobileCopy() {
-    const transfer = new DataTransfer()
-    await editor.writeCopyData(transfer)
-    state.clipboardHtml = transfer.getData('text/html')
+/** Explicit in-app mobile clipboard; shares the same typed capture and paste dispatch. */
+export function createMobileClipboardActions(editor: Editor) {
+  async function mobileCopy(): Promise<boolean> {
+    const payload = await editor.prepareCopy()
+    if (!payload.html) return false
+    setInMemoryClipboardPayload(payload)
+    return true
   }
 
   async function mobileCut() {
-    await mobileCopy()
+    const selectedIds = new Set(editor.state.selectedIds)
+    if (!(await mobileCopy())) return
+    if (
+      selectedIds.size !== editor.state.selectedIds.size ||
+      [...selectedIds].some((id) => !editor.state.selectedIds.has(id))
+    )
+      return
     editor.deleteSelected()
   }
 
-  function mobilePaste() {
-    if (state.clipboardHtml) {
-      void editor.pasteFromHTML(state.clipboardHtml)
-    }
+  async function mobilePaste() {
+    const html = getInMemoryClipboardHTML()
+    if (html) await pasteClipboardHTML(editor, html)
   }
 
   return { mobileCopy, mobileCut, mobilePaste }

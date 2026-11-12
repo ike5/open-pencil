@@ -1,7 +1,28 @@
+import type { SceneNode } from '@open-pencil/scene-graph'
+import { readIcon } from '@open-pencil/scene-graph/icons'
+
 import type { EditorCommandMapOptions } from './context'
 import type { EditorCommand, EditorCommandId } from './types'
 
 type SelectionCommandId = Extract<EditorCommandId, `selection.${string}`>
+
+function selectedMaskTarget(nodes: SceneNode[], editor: EditorCommandMapOptions['editor']) {
+  if (nodes.length === 0) return null
+  if (nodes.length === 1) return nodes[0]
+
+  const [first] = nodes
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const selectedParents = new Set(nodes.map((node) => node.parentId))
+  if (selectedParents.size !== 1) return first
+  const parentId = first.parentId
+  if (!parentId) return first
+
+  for (const sibling of editor.graph.getChildren(parentId)) {
+    const selected = byId.get(sibling.id)
+    if (selected) return selected
+  }
+  return first
+}
 
 export function createSelectionCommands({
   editor,
@@ -11,6 +32,12 @@ export function createSelectionCommands({
   otherPages,
   moveSelectionToPage
 }: EditorCommandMapOptions): Record<SelectionCommandId, EditorCommand> {
+  function arrangeSelection(options: Parameters<typeof editor.arrangeNodes>[1]) {
+    void editor.arrangeNodes([...selection.selectedIds.value], options).catch((error: unknown) => {
+      console.error('[Vue] Arrange failed:', error)
+    })
+  }
+
   return {
     'selection.selectAll': {
       id: 'selection.selectAll',
@@ -19,6 +46,46 @@ export function createSelectionCommands({
       },
       enabled: capabilities.canSelectAll,
       run: () => editor.selectAll()
+    },
+    'selection.selectInverse': {
+      id: 'selection.selectInverse',
+      get label() {
+        return t.value.selectInverse
+      },
+      enabled: capabilities.canSelectAll,
+      run: () => editor.selectInverse()
+    },
+    'selection.selectChildren': {
+      id: 'selection.selectChildren',
+      get label() {
+        return t.value.selectChildren
+      },
+      enabled: selection.hasSelection,
+      run: () => editor.selectChildren()
+    },
+    'selection.selectParent': {
+      id: 'selection.selectParent',
+      get label() {
+        return t.value.selectParent
+      },
+      enabled: selection.hasSelection,
+      run: () => editor.selectParent()
+    },
+    'selection.selectNextSibling': {
+      id: 'selection.selectNextSibling',
+      get label() {
+        return t.value.selectNextSibling
+      },
+      enabled: selection.hasSelection,
+      run: () => editor.selectNextSibling()
+    },
+    'selection.selectPreviousSibling': {
+      id: 'selection.selectPreviousSibling',
+      get label() {
+        return t.value.selectPreviousSibling
+      },
+      enabled: selection.hasSelection,
+      run: () => editor.selectPreviousSibling()
     },
     'selection.duplicate': {
       id: 'selection.duplicate',
@@ -39,10 +106,26 @@ export function createSelectionCommands({
     'selection.group': {
       id: 'selection.group',
       get label() {
-        return t.value.group
+        return t.value.groupSelection
       },
       enabled: capabilities.canGroup,
       run: () => editor.groupSelected()
+    },
+    'selection.frameSelection': {
+      id: 'selection.frameSelection',
+      get label() {
+        return t.value.frameSelection
+      },
+      enabled: capabilities.canFrameSelection,
+      run: () => editor.frameSelection()
+    },
+    'selection.wrapInSection': {
+      id: 'selection.wrapInSection',
+      get label() {
+        return t.value.wrapInSection
+      },
+      enabled: capabilities.canWrapInSection,
+      run: () => editor.wrapSelectionInSection()
     },
     'selection.ungroup': {
       id: 'selection.ungroup',
@@ -87,13 +170,34 @@ export function createSelectionCommands({
       enabled: capabilities.canDetachInstance,
       run: () => editor.detachInstance()
     },
+    'selection.detachIcon': {
+      id: 'selection.detachIcon',
+      get label() {
+        return t.value.detachIcon
+      },
+      enabled: capabilities.canDetachIcon,
+      run: () => {
+        const icons = editor.getSelectedNodes().filter((node) => readIcon(node))
+        editor.undo.runBatch('Detach icon', () => {
+          for (const icon of icons) editor.detachIcon(icon.id)
+        })
+      }
+    },
     'selection.goToMainComponent': {
       id: 'selection.goToMainComponent',
       get label() {
         return t.value.goToMainComponent
       },
       enabled: capabilities.canGoToMainComponent,
-      run: () => editor.goToMainComponent()
+      run: () => void editor.goToMainComponent()
+    },
+    'selection.createSlot': {
+      id: 'selection.createSlot',
+      get label() {
+        return t.value.createSlot
+      },
+      enabled: capabilities.canCreateSlot,
+      run: () => void editor.createSlot()
     },
     'selection.wrapInAutoLayout': {
       id: 'selection.wrapInAutoLayout',
@@ -103,6 +207,31 @@ export function createSelectionCommands({
       enabled: capabilities.canWrapInAutoLayout,
       run: () => editor.wrapInAutoLayout()
     },
+    'selection.toggleMask': {
+      id: 'selection.toggleMask',
+      get label() {
+        const target = selectedMaskTarget(editor.getSelectedNodes(), editor)
+        return target?.isMask ? t.value.removeMask : t.value.useAsMask
+      },
+      enabled: capabilities.canToggleMask,
+      run: () => {
+        const target = selectedMaskTarget(editor.getSelectedNodes(), editor)
+        if (!target) return
+        editor.updateNodeWithUndo(
+          target.id,
+          { isMask: !target.isMask },
+          target.isMask ? 'Remove mask' : 'Use as mask'
+        )
+      }
+    },
+    'selection.bringForward': {
+      id: 'selection.bringForward',
+      get label() {
+        return t.value.bringForward
+      },
+      enabled: capabilities.canBringToFront,
+      run: () => editor.bringForward()
+    },
     'selection.bringToFront': {
       id: 'selection.bringToFront',
       get label() {
@@ -110,6 +239,14 @@ export function createSelectionCommands({
       },
       enabled: capabilities.canBringToFront,
       run: () => editor.bringToFront()
+    },
+    'selection.sendBackward': {
+      id: 'selection.sendBackward',
+      get label() {
+        return t.value.sendBackward
+      },
+      enabled: capabilities.canSendToBack,
+      run: () => editor.sendBackward()
     },
     'selection.sendToBack': {
       id: 'selection.sendToBack',
@@ -122,7 +259,7 @@ export function createSelectionCommands({
     'selection.toggleVisibility': {
       id: 'selection.toggleVisibility',
       get label() {
-        return t.value.toggleVisibility
+        return t.value.showHide
       },
       enabled: capabilities.canToggleVisibility,
       run: () => editor.toggleVisibility()
@@ -130,10 +267,194 @@ export function createSelectionCommands({
     'selection.toggleLock': {
       id: 'selection.toggleLock',
       get label() {
-        return t.value.toggleLock
+        return t.value.lockUnlock
       },
       enabled: capabilities.canToggleLock,
       run: () => editor.toggleLock()
+    },
+    'selection.flipHorizontal': {
+      id: 'selection.flipHorizontal',
+      get label() {
+        return t.value.flipHorizontal
+      },
+      enabled: capabilities.canFlip,
+      run: () => editor.flipNodes([...selection.selectedIds.value], 'horizontal')
+    },
+    'selection.flipVertical': {
+      id: 'selection.flipVertical',
+      get label() {
+        return t.value.flipVertical
+      },
+      enabled: capabilities.canFlip,
+      run: () => editor.flipNodes([...selection.selectedIds.value], 'vertical')
+    },
+    'selection.distributeHorizontal': {
+      id: 'selection.distributeHorizontal',
+      get label() {
+        return t.value.distributeHorizontal
+      },
+      enabled: capabilities.canDistribute,
+      run: () => editor.distributeNodes([...selection.selectedIds.value], 'horizontal')
+    },
+    'selection.distributeVertical': {
+      id: 'selection.distributeVertical',
+      get label() {
+        return t.value.distributeVertical
+      },
+      enabled: capabilities.canDistribute,
+      run: () => editor.distributeNodes([...selection.selectedIds.value], 'vertical')
+    },
+    'selection.tidyUp': {
+      id: 'selection.tidyUp',
+      get label() {
+        return t.value.tidyUp
+      },
+      enabled: capabilities.canArrange,
+      run: () => editor.tidyNodes([...selection.selectedIds.value])
+    },
+    'selection.packHorizontal': {
+      id: 'selection.packHorizontal',
+      get label() {
+        return t.value.packHorizontal
+      },
+      enabled: capabilities.canArrange,
+      run: () => editor.packNodes([...selection.selectedIds.value], 'horizontal')
+    },
+    'selection.packVertical': {
+      id: 'selection.packVertical',
+      get label() {
+        return t.value.packVertical
+      },
+      enabled: capabilities.canArrange,
+      run: () => editor.packNodes([...selection.selectedIds.value], 'vertical')
+    },
+    'selection.arrangeSpread': {
+      id: 'selection.arrangeSpread',
+      get label() {
+        return t.value.arrangeSpread
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'spread' })
+    },
+    'selection.arrangeCompact': {
+      id: 'selection.arrangeCompact',
+      get label() {
+        return t.value.arrangeCompact
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'compact' })
+    },
+    'selection.arrangePack': {
+      id: 'selection.arrangePack',
+      get label() {
+        return t.value.arrangePack
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'pack' })
+    },
+    'selection.arrangeFlowDown': {
+      id: 'selection.arrangeFlowDown',
+      get label() {
+        return t.value.arrangeFlowDown
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'flow', direction: 'TB' })
+    },
+    'selection.arrangeFlowRight': {
+      id: 'selection.arrangeFlowRight',
+      get label() {
+        return t.value.arrangeFlowRight
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'flow', direction: 'LR' })
+    },
+    'selection.arrangeTreeDown': {
+      id: 'selection.arrangeTreeDown',
+      get label() {
+        return t.value.arrangeTreeDown
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'tree', direction: 'TB' })
+    },
+    'selection.arrangeTreeRight': {
+      id: 'selection.arrangeTreeRight',
+      get label() {
+        return t.value.arrangeTreeRight
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'tree', direction: 'LR' })
+    },
+    'selection.arrangeRadial': {
+      id: 'selection.arrangeRadial',
+      get label() {
+        return t.value.arrangeRadial
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'radial' })
+    },
+    'selection.arrangeNetwork': {
+      id: 'selection.arrangeNetwork',
+      get label() {
+        return t.value.arrangeNetwork
+      },
+      enabled: capabilities.canAutoArrange,
+      run: () => arrangeSelection({ layout: 'network' })
+    },
+    'selection.booleanUnion': {
+      id: 'selection.booleanUnion',
+      get label() {
+        return t.value.unionSelection
+      },
+      enabled: capabilities.canBooleanOperation,
+      run: () => editor.booleanOperationSelected('UNION')
+    },
+    'selection.booleanSubtract': {
+      id: 'selection.booleanSubtract',
+      get label() {
+        return t.value.subtractSelection
+      },
+      enabled: capabilities.canBooleanOperation,
+      run: () => editor.booleanOperationSelected('SUBTRACT')
+    },
+    'selection.booleanIntersect': {
+      id: 'selection.booleanIntersect',
+      get label() {
+        return t.value.intersectSelection
+      },
+      enabled: capabilities.canBooleanOperation,
+      run: () => editor.booleanOperationSelected('INTERSECT')
+    },
+    'selection.booleanExclude': {
+      id: 'selection.booleanExclude',
+      get label() {
+        return t.value.excludeSelection
+      },
+      enabled: capabilities.canBooleanOperation,
+      run: () => editor.booleanOperationSelected('EXCLUDE')
+    },
+    'selection.flatten': {
+      id: 'selection.flatten',
+      get label() {
+        return t.value.flattenSelection
+      },
+      enabled: capabilities.canFlatten,
+      run: () => editor.flattenSelected()
+    },
+    'selection.outlineText': {
+      id: 'selection.outlineText',
+      get label() {
+        return t.value.outlineText
+      },
+      enabled: capabilities.canOutlineText,
+      run: () => editor.outlineTextSelected()
+    },
+    'selection.outlineStroke': {
+      id: 'selection.outlineStroke',
+      get label() {
+        return t.value.outlineStroke
+      },
+      enabled: capabilities.canOutlineStroke,
+      run: () => editor.outlineStrokeSelected()
     },
     'selection.moveToPage': {
       id: 'selection.moveToPage',

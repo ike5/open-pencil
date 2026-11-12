@@ -2,8 +2,9 @@ import { defineCommand } from 'citty'
 
 import type { AnalyzeTypographyResult } from '@open-pencil/core/rpc'
 
+import { appTargetOptions } from '#cli/app/target'
 import { bold, fmtHistogram, fmtSummary } from '#cli/format'
-import { loadRpcData } from '#cli/rpc-data'
+import { loadRPCData } from '#cli/rpc-data'
 
 function weightName(w: number): string {
   if (w <= 100) return 'Thin'
@@ -30,10 +31,16 @@ export default defineCommand({
       description: 'Group by: family, size, weight (default: show all styles)'
     },
     limit: { type: 'string', description: 'Max styles to show', default: '30' },
+    ...appTargetOptions,
     json: { type: 'boolean', description: 'Output as JSON' }
   },
   async run({ args }) {
-    const data = await loadRpcData<AnalyzeTypographyResult>(args.file, 'analyze_typography', {})
+    const data = await loadRPCData<AnalyzeTypographyResult>(
+      args.file,
+      'analyze_typography',
+      {},
+      args
+    )
     const limit = Number(args.limit)
     const groupBy = args['group-by']
 

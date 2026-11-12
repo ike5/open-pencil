@@ -1,144 +1,61 @@
-import { parseColor } from '#core/color'
-import { extractPaths } from '#core/icons/svg'
-import type { IconPathInfo } from '#core/icons/types'
-import { parseSVGPath } from '#core/io/formats/svg/parse-path'
-import type { SceneNode, Stroke } from '#core/scene-graph'
-import { defineTool } from '#core/tools/schema'
+import * as v from 'valibot'
 
-const STROKE_CAP_MAP: Record<string, SceneNode['strokeCap']> = {
-  butt: 'NONE',
-  round: 'ROUND',
-  square: 'SQUARE'
-}
+import { graphOf } from '#core/figma-api/graph'
+import { prepareSlotInsertion } from '#core/figma-api/slots'
+import { createSVGNodesFromImport, prepareSVGImport, svgImportFonts } from '#core/io/formats/svg'
+import { toolNumber, defineTool } from '#core/tools/schema'
 
-const STROKE_JOIN_MAP: Record<string, SceneNode['strokeJoin']> = {
-  miter: 'MITER',
-  round: 'ROUND',
-  bevel: 'BEVEL'
-}
-
-import type { Rect } from '#core/types'
-
-function parseSvgViewBox(svg: string): Rect | null {
-  const match = svg.match(/viewBox="([^"]+)"/)
-  if (!match) return null
-  const [x, y, w, h] = match[1].split(/[\s,]+/).map(Number)
-  if ([x, y, w, h].some((n) => !Number.isFinite(n))) return null
-  return { x, y, width: w, height: h }
-}
-
-function parseSvgDimension(svg: string, attr: string): number | null {
-  const match = svg.match(new RegExp(`\\b${attr}="([^"]+)"`))
-  if (!match) return null
-  const n = parseFloat(match[1])
-  return Number.isFinite(n) && n > 0 ? n : null
-}
-
-function parseSvgSize(svg: string): { width: number; height: number } {
-  const viewBox = parseSvgViewBox(svg)
-  const w = parseSvgDimension(svg, 'width')
-  const h = parseSvgDimension(svg, 'height')
-  if (w && h) return { width: w, height: h }
-  if (viewBox) return { width: viewBox.width, height: viewBox.height }
-  return { width: 24, height: 24 }
-}
-
-function createVectorFromPath(
-  figma: Parameters<Parameters<typeof defineTool>[0]['execute']>[0],
-  path: IconPathInfo,
-  width: number,
-  height: number,
-  parentId: string,
-  defaultColor: string
-) {
-  const vectorNetwork = parseSVGPath(path.d, path.fillRule)
-  const vector = figma.graph.createNode('VECTOR', parentId, {
-    name: 'path',
-    width,
-    height,
-    vectorNetwork
-  })
-  vector.x = 0
-  vector.y = 0
-
-  if (path.fill && path.fill !== 'none') {
-    const fillColor =
-      path.fill === 'currentColor' ? parseColor(defaultColor) : parseColor(path.fill)
-    figma.graph.updateNode(vector.id, {
-      fills: [{ type: 'SOLID', color: fillColor, opacity: 1, visible: true }]
-    })
-  } else if (path.fill === null && !path.stroke) {
-    const fillColor = parseColor(defaultColor)
-    figma.graph.updateNode(vector.id, {
-      fills: [{ type: 'SOLID', color: fillColor, opacity: 1, visible: true }]
-    })
-  } else {
-    figma.graph.updateNode(vector.id, { fills: [] })
-  }
-
-  if (path.stroke && path.stroke !== 'none') {
-    const strokeColor =
-      path.stroke === 'currentColor' ? parseColor(defaultColor) : parseColor(path.stroke)
-    const stroke: Stroke = {
-      color: strokeColor,
-      weight: path.strokeWidth,
-      opacity: 1,
-      visible: true,
-      align: 'CENTER',
-      cap: STROKE_CAP_MAP[path.strokeCap] ?? 'NONE',
-      join: STROKE_JOIN_MAP[path.strokeJoin] ?? 'MITER'
-    }
-    figma.graph.updateNode(vector.id, { strokes: [stroke] })
-  }
-
-  return vector
-}
-
-export const importSvg = defineTool({
+export const importSVG = defineTool({
   name: 'import_svg',
-  mutates: true,
+
   description:
-    'Import raw SVG markup onto the canvas. Parses <path>, <circle>, <ellipse>, <rect>, <line>, <polygon>, <polyline> elements and creates vector nodes. Supports fill, stroke, stroke-width, viewBox sizing.',
-  params: {
-    svg: {
-      type: 'string',
-      description: 'SVG markup string (e.g. \'<svg viewBox="0 0 24 24"><path d="M..."/></svg>\')',
-      required: true
-    },
-    name: { type: 'string', description: 'Name for the created frame (default: "SVG")' },
-    color: {
-      type: 'color',
-      description: 'Default color for currentColor fills/strokes (default: #000000)'
-    },
-    parent_id: { type: 'string', description: 'Parent node ID' },
-    x: { type: 'number', description: 'X position' },
-    y: { type: 'number', description: 'Y position' }
-  },
+    'Import SVG markup as editable layers, as pasting it into Figma does: a frame (a group without width, height, or viewBox) with a group per <g>, a vector per shape, a text per <text>, named by id, and mask groups for clipping. Supports shapes, <tspan> styles, inherited attributes, opacity, transforms, gradients, clip paths, and internal <use>.',
+  execution: { kind: 'async', mutation: 'document' },
+  input: v.strictObject({
+    svg: v.pipe(
+      v.string(),
+      v.description('SVG markup string (e.g. \'<svg viewBox="0 0 24 24"><path d="M..."/></svg>\')')
+    ),
+    name: v.optional(
+      v.pipe(
+        v.string(),
+        v.description(
+          'Name for the created frame or group (default: the root <svg> id, else "Frame" or "Group")'
+        )
+      )
+    ),
+    color: v.optional(
+      v.pipe(
+        v.string(),
+        v.description('Default color for currentColor fills/strokes (default: #000000)')
+      )
+    ),
+    parent_id: v.optional(v.pipe(v.string(), v.description('Parent node ID'))),
+    x: v.optional(toolNumber(v.pipe(v.number(), v.description('X position')))),
+    y: v.optional(toolNumber(v.pipe(v.number(), v.description('Y position'))))
+  }),
   execute: async (figma, args) => {
-    const svg = args.svg
-    if (!svg || typeof svg !== 'string') return { error: 'svg parameter is required' }
+    if (!args.svg || typeof args.svg !== 'string') return { error: 'svg parameter is required' }
 
-    const paths = extractPaths(svg)
-    if (paths.length === 0) return { error: 'No supported SVG elements found in the markup' }
-
-    const { width, height } = parseSvgSize(svg)
-    const defaultColor = args.color ?? '#000000'
+    const data = prepareSVGImport(args.svg, { defaultColor: args.color })
+    // Text is measured and placed as it is created, so its fonts load first.
+    await graphOf(figma).waitOutsideEdit(
+      Promise.all(
+        (data ? svgImportFonts(data) : []).map(({ family, style }) =>
+          figma.loadFontAsync({ family, style })
+        )
+      )
+    )
     const parentId = args.parent_id ?? figma.currentPage.id
-
-    const frame = figma.graph.createNode('FRAME', parentId, {
-      name: args.name ?? 'SVG',
-      width,
-      height,
-      fills: []
-    })
-
-    if (args.x !== undefined) frame.x = args.x
-    if (args.y !== undefined) frame.y = args.y
-
-    for (const path of paths) {
-      createVectorFromPath(figma, path, width, height, frame.id, defaultColor)
-    }
-
+    if (data) prepareSlotInsertion(graphOf(figma), parentId, 'import_svg')
+    const frame =
+      data &&
+      createSVGNodesFromImport(graphOf(figma), parentId, data, {
+        name: args.name,
+        x: args.x,
+        y: args.y
+      })
+    if (!frame) return { error: 'No supported SVG elements found in the markup' }
     return { id: frame.id, name: frame.name, type: frame.type }
   }
 })

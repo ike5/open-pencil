@@ -1,0 +1,234 @@
+import type { Effect as KiwiEffect, Paint, VariableAliasValue } from '@open-pencil/kiwi/fig/codec'
+import { guidToString, stringToGuid } from '@open-pencil/kiwi/fig/guid'
+import type {
+  Fill,
+  Stroke,
+  Effect,
+  GlassEffectParams,
+  ProgressiveBlur,
+  BlendMode,
+  ImageScaleMode,
+  GradientTransform,
+  StrokeCap,
+  StrokeJoin
+} from '@open-pencil/scene-graph'
+import { BLACK, UNSET_GLASS } from '@open-pencil/scene-graph/constants'
+import type { Color, Matrix } from '@open-pencil/scene-graph/primitives'
+
+import { hexToBytes } from './bytes'
+
+export function safeColor(color: Color | Omit<Color, 'a'>): Color {
+  return { r: color.r, g: color.g, b: color.b, a: 'a' in color ? color.a : 1 }
+}
+
+export function fillToKiwiPaint(fill: Fill): Paint {
+  const paint: Paint = {
+    type: fill.type,
+    color: safeColor(fill.color),
+    opacity: fill.opacity,
+    visible: fill.visible,
+    blendMode: fill.blendMode ?? 'NORMAL'
+  }
+  if (fill.gradientStops) {
+    paint.stops = fill.gradientStops.map((stop) => ({
+      color: safeColor(stop.color),
+      position: stop.position
+    }))
+  }
+  if (fill.gradientTransform) paint.transform = fill.gradientTransform
+  if (fill.imageHash) paint.image = { hash: hexToBytes(fill.imageHash) }
+  if (fill.imageScaleMode)
+    paint.imageScaleMode = fill.imageScaleMode === 'CROP' ? 'STRETCH' : fill.imageScaleMode
+  if (fill.imageTransform) paint.transform = fill.imageTransform
+  if (fill.imageRotation) paint.rotation = fill.imageRotation
+  if (fill.sourceNodeId) paint.sourceNodeId = stringToGuid(fill.sourceNodeId)
+  if (fill.scale) paint.scale = fill.scale
+  if (fill.spacing) paint.spacing = fill.spacing
+  if (fill.patternSpacing) paint.patternSpacing = fill.patternSpacing
+  if (fill.patternTileType) paint.patternTileType = fill.patternTileType
+  if (fill.verticalAlignment) paint.verticalAlignment = fill.verticalAlignment
+  if (fill.horizontalAlignment) paint.horizontalAlignment = fill.horizontalAlignment
+  if (fill.noiseType) paint.noiseType = fill.noiseType
+  if (fill.density !== undefined) paint.density = fill.density
+  if (fill.noiseSize) paint.noiseSize = fill.noiseSize
+  if (fill.customEffectId) paint.customEffectId = { guid: stringToGuid(fill.customEffectId) }
+  return paint
+}
+
+function convertColor(color?: Partial<Color>): Color {
+  if (!color) return { ...BLACK }
+  return { r: color.r ?? 0, g: color.g ?? 0, b: color.b ?? 0, a: color.a ?? 1 }
+}
+
+function imageHashToString(hash: Record<string, number>): string {
+  const bytes = Object.keys(hash)
+    .sort((a, b) => Number(a) - Number(b))
+    .map((k) => hash[Number(k)])
+  return bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function convertGradientTransform(t?: Matrix): GradientTransform | undefined {
+  if (!t) return undefined
+  return { m00: t.m00, m01: t.m01, m02: t.m02, m10: t.m10, m11: t.m11, m12: t.m12 }
+}
+
+let variableColorResolver: ((alias: VariableAliasValue) => Color | null) | null = null
+
+export function setVariableColorResolver(
+  resolver: ((alias: VariableAliasValue) => Color | null) | null
+): void {
+  variableColorResolver = resolver
+}
+
+function resolveColorVar(paint: Paint): Color | undefined {
+  const alias = paint.colorVar?.value?.alias
+  if (!alias || !variableColorResolver) return undefined
+  return variableColorResolver(alias) ?? undefined
+}
+
+function resolvedPaintColor(paint: Paint): { color: Color; opacity: number } {
+  const resolved = resolveColorVar(paint)
+  if (!resolved) return { color: convertColor(paint.color), opacity: paint.opacity ?? 1 }
+  return {
+    color: { ...resolved, a: paint.color?.a ?? 1 },
+    opacity: paint.opacity ?? resolved.a
+  }
+}
+
+function convertBaseFill(p: Paint): Fill {
+  const { color, opacity } = resolvedPaintColor(p)
+  return {
+    type: p.type,
+    color,
+    opacity,
+    visible: p.visible ?? true,
+    blendMode: (p.blendMode ?? 'NORMAL') as BlendMode
+  }
+}
+
+function applyGradientPaintFields(fill: Fill, p: Paint): void {
+  if (!p.type.startsWith('GRADIENT') || !p.stops) return
+  fill.gradientStops = p.stops.map((s) => ({
+    color: convertColor(s.color),
+    position: s.position
+  }))
+  if (p.transform) fill.gradientTransform = convertGradientTransform(p.transform)
+}
+
+function applyImagePaintFields(fill: Fill, p: Paint): void {
+  if (p.type !== 'IMAGE') return
+  if (p.image && typeof p.image === 'object') {
+    const img = p.image as { hash: string | Record<string, number> }
+    if (typeof img.hash === 'object') {
+      fill.imageHash = imageHashToString(img.hash)
+    } else if (typeof img.hash === 'string') {
+      fill.imageHash = img.hash
+    }
+  }
+  fill.imageScaleMode = (
+    p.imageScaleMode === 'STRETCH' ? 'CROP' : (p.imageScaleMode ?? 'FILL')
+  ) as ImageScaleMode
+  // Figma writes an identity transform for Fill, Fit and Tile, and ignores what a Tile keeps from
+  // an earlier crop; only a crop places the image by it.
+  if (p.transform && fill.imageScaleMode === 'CROP')
+    fill.imageTransform = convertGradientTransform(p.transform)
+  if (p.rotation) fill.imageRotation = p.rotation
+}
+
+function applySchemaPaintFields(fill: Fill, p: Paint): void {
+  if (p.sourceNodeId) fill.sourceNodeId = guidToString(p.sourceNodeId)
+  if (p.scale) fill.scale = p.scale
+  if (p.spacing) fill.spacing = p.spacing
+  if (p.patternSpacing) fill.patternSpacing = p.patternSpacing
+  if (p.patternTileType) fill.patternTileType = p.patternTileType as Fill['patternTileType']
+  if (p.verticalAlignment) fill.verticalAlignment = p.verticalAlignment as Fill['verticalAlignment']
+  if (p.horizontalAlignment)
+    fill.horizontalAlignment = p.horizontalAlignment as Fill['horizontalAlignment']
+  if (p.noiseType) fill.noiseType = p.noiseType as Fill['noiseType']
+  if (p.density !== undefined) fill.density = p.density
+  if (p.noiseSize) fill.noiseSize = p.noiseSize
+  if (p.customEffectId?.guid) fill.customEffectId = guidToString(p.customEffectId.guid)
+}
+
+/** One Figma paint as a Scene Graph paint, whether it ends up a fill or a stroke. */
+function convertPaint(p: Paint): Fill {
+  const fill = convertBaseFill(p)
+  applyGradientPaintFields(fill, p)
+  applyImagePaintFields(fill, p)
+  applySchemaPaintFields(fill, p)
+  return fill
+}
+
+export function convertFills(paints?: Paint[]): Fill[] {
+  if (!paints) return []
+  return paints.map(convertPaint)
+}
+
+/** A Kiwi stroke alignment; Figma leaves out the centered default. */
+export function convertStrokeAlign(align?: string): Stroke['align'] {
+  return align === 'INSIDE' || align === 'OUTSIDE' ? align : 'CENTER'
+}
+
+export function convertStrokes(
+  paints?: Paint[],
+  weight?: number,
+  align?: string,
+  cap?: StrokeCap,
+  join?: StrokeJoin,
+  dashPattern?: number[]
+): Stroke[] {
+  if (!paints) return []
+  const strokeAlign = convertStrokeAlign(align)
+
+  return paints.map((p) => ({
+    ...convertPaint(p),
+    weight: weight ?? 1,
+    align: strokeAlign,
+    cap: cap ?? 'NONE',
+    join: join ?? 'MITER',
+    dashPattern: dashPattern ?? []
+  }))
+}
+
+export function convertEffects(effects?: KiwiEffect[]): Effect[] {
+  if (!effects) return []
+  return effects.map((e) => {
+    const effect: Effect = {
+      type: e.type,
+      color: convertColor(e.color),
+      offset: e.offset ?? { x: 0, y: 0 },
+      radius: e.radius ?? 0,
+      spread: e.spread ?? 0,
+      visible: e.visible ?? true,
+      blendMode: (e.blendMode ?? 'NORMAL') as BlendMode,
+      showShadowBehindNode: e.showShadowBehindNode ?? true
+    }
+    if (e.type === 'GLASS') effect.glass = convertGlass(e)
+    if (e.blurOpType === 'PROGRESSIVE' && isBlur(e.type)) effect.progressive = convertProgressive(e)
+    return effect
+  })
+}
+
+function isBlur(type: KiwiEffect['type']): boolean {
+  return type === 'FOREGROUND_BLUR' || type === 'LAYER_BLUR' || type === 'BACKGROUND_BLUR'
+}
+
+/** A progressive blur's ramp, top centre to bottom centre where the archive leaves it out. */
+function convertProgressive(e: KiwiEffect): ProgressiveBlur {
+  return {
+    startRadius: e.startRadius ?? 0,
+    startOffset: { ...(e.startOffset ?? { x: 0.5, y: 0 }) },
+    endOffset: { ...(e.endOffset ?? { x: 0.5, y: 1 }) }
+  }
+}
+
+/** A glass effect's lens from the archive's names for its fields (`refractionRadius` is depth). */
+function convertGlass(e: KiwiEffect): GlassEffectParams {
+  return {
+    refraction: e.refractionIntensity ?? UNSET_GLASS.refraction,
+    depth: e.refractionRadius ?? UNSET_GLASS.depth,
+    lightAngle: e.specularAngle ?? UNSET_GLASS.lightAngle,
+    lightIntensity: e.specularIntensity ?? UNSET_GLASS.lightIntensity,
+    dispersion: e.chromaticAberration ?? UNSET_GLASS.dispersion
+  }
+}

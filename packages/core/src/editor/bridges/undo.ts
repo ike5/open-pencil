@@ -4,18 +4,41 @@ import type { createUndoActions } from '#core/editor/undo'
 type SelectionActions = ReturnType<typeof createSelectionActions>
 type UndoActions = ReturnType<typeof createUndoActions>
 
-export function createUndoBridge(undoActions: UndoActions, selection: SelectionActions) {
+/**
+ * `flushPending` commits edits still being coalesced, such as a run of arrow keys, so undo right
+ * after them undoes the run, not the edit before it.
+ */
+export function createUndoBridge(
+  undoActions: UndoActions,
+  selection: SelectionActions,
+  flushPending: () => void
+) {
   return {
     commitMove: undoActions.commitMove,
     commitMoveWithReparent: undoActions.commitMoveWithReparent,
     commitDuplicateMove: undoActions.commitDuplicateMove,
     commitResize: undoActions.commitResize,
+    commitGroupResize: undoActions.commitGroupResize,
     commitRotation: undoActions.commitRotation,
     commitNodeUpdate: undoActions.commitNodeUpdate,
-    undoAction: () => undoActions.undoAction(selection.validateEnteredContainer),
-    redoAction: () => undoActions.redoAction(selection.validateEnteredContainer),
+    undoAction: () => {
+      flushPending()
+      undoActions.undoAction(selection.validateEnteredContainer)
+    },
+    redoAction: () => {
+      flushPending()
+      undoActions.redoAction(selection.validateEnteredContainer)
+    },
     snapshotPage: undoActions.snapshotPage,
     restorePageFromSnapshot: undoActions.restorePageFromSnapshot,
-    pushUndoEntry: undoActions.pushUndoEntry
+    recordEdit: <T>(options: Parameters<UndoActions['recordEdit']>[0], run: () => T): T => {
+      // A response to a step comes after a nudge made since, which is the newer step once recorded.
+      if (options.joinStep) flushPending()
+      return undoActions.recordEdit(options, run)
+    },
+    recordEditAsync: undoActions.recordEditAsync,
+    restoreDocumentChange: undoActions.restoreDocumentChange,
+    pushUndoEntry: undoActions.pushUndoEntry,
+    pushUndoStep: undoActions.pushUndoStep
   }
 }

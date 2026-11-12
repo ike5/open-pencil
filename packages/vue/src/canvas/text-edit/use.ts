@@ -1,12 +1,13 @@
 import { useEventListener } from '@vueuse/core'
 import { shallowRef, type Ref } from 'vue'
 
-import type { Editor } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
 
 import { createTextClipboardActions } from './clipboard'
 import { createCaretBlink, createTextCompositionHandlers, createTextEditActions } from './editing'
 import { createTextFormattingActions } from './formatting'
 import { createTextKeyDownHandler } from './keyboard'
+import { createTextListActions } from './paragraphs'
 import { focusTextAreaOnCanvasPointerDown, useTextEditingSession } from './textarea'
 
 /**
@@ -16,11 +17,23 @@ import { focusTextAreaOnCanvasPointerDown, useTextEditingSession } from './texta
  * blinking, keyboard editing behavior, text formatting shortcuts, and syncing
  * text/style-run updates back into the scene graph.
  */
-export function useTextEdit(canvasRef: Ref<HTMLCanvasElement | null>, store: Editor) {
+export function useTextEdit(
+  canvasRef: Ref<HTMLCanvasElement | null>,
+  store: Editor,
+  options?: { isEnabled?: () => boolean }
+) {
   const textareaRef = shallowRef<HTMLTextAreaElement | null>(null)
   const { resetBlink, stopBlink } = createCaretBlink(store)
-  const { getEditingNode, insertText, deleteText } = createTextEditActions(store)
+  const {
+    getEditingNode,
+    insertText,
+    replaceComposedText,
+    restoreComposition,
+    finishComposition,
+    deleteText
+  } = createTextEditActions(store)
   const { toggleBold, toggleItalic, toggleUnderline } = createTextFormattingActions(store)
+  const { toggleListType, changeIndentation } = createTextListActions(store)
 
   const { handleCopy, handleCut, handlePaste } = createTextClipboardActions({
     store,
@@ -28,8 +41,22 @@ export function useTextEdit(canvasRef: Ref<HTMLCanvasElement | null>, store: Edi
     deleteText,
     resetBlink
   })
-  const { isComposing, onCompositionStart, onCompositionEnd, onInput, resetComposition } =
-    createTextCompositionHandlers({ textareaRef, getEditingNode, insertText, resetBlink })
+  const {
+    isComposing,
+    onCompositionStart,
+    onCompositionUpdate,
+    onCompositionEnd,
+    onInput,
+    resetComposition
+  } = createTextCompositionHandlers({
+    textareaRef,
+    getEditingNode,
+    insertText,
+    replaceComposedText,
+    restoreComposition,
+    finishComposition,
+    resetBlink
+  })
 
   const onKeyDown = createTextKeyDownHandler({
     store,
@@ -44,16 +71,26 @@ export function useTextEdit(canvasRef: Ref<HTMLCanvasElement | null>, store: Edi
     handlePaste,
     toggleBold,
     toggleItalic,
-    toggleUnderline
+    toggleUnderline,
+    toggleListType,
+    changeIndentation
   })
 
   useEventListener(textareaRef, 'input', onInput)
   useEventListener(textareaRef, 'compositionstart', onCompositionStart)
+  useEventListener(textareaRef, 'compositionupdate', onCompositionUpdate)
   useEventListener(textareaRef, 'compositionend', onCompositionEnd)
   useEventListener(textareaRef, 'keydown', onKeyDown)
   useEventListener(canvasRef, 'mousedown', () =>
     focusTextAreaOnCanvasPointerDown(textareaRef, store)
   )
 
-  useTextEditingSession({ store, textareaRef, resetBlink, stopBlink, resetComposition })
+  useTextEditingSession({
+    store,
+    textareaRef,
+    resetBlink,
+    stopBlink,
+    resetComposition,
+    isEnabled: options?.isEnabled
+  })
 }

@@ -1,44 +1,17 @@
 import { defineConfig } from 'tsdown'
-import type { Plugin } from 'rolldown'
+import raw from 'unplugin-raw/rolldown'
 
-function rawMd(): Plugin {
-  return {
-    name: 'raw-md',
-    transform(code, id) {
-      if (id.endsWith('.md')) {
-        return { code: `export default ${JSON.stringify(code)}`, map: null }
-      }
-    }
-  }
-}
+import { libraryConfig } from '@open-pencil/package-artifacts-tools/tsdown'
 
-export default defineConfig({
-  entry: ['src/**/*.ts', '!src/**/*.d.ts'],
-  plugins: [rawMd()],
-  unbundle: true,
-  platform: 'neutral',
-  format: ['esm'],
-  dts: true,
-  sourcemap: true,
-  clean: true,
-  outDir: './dist',
-  deps: {
-    neverBundle: [
-      '@iconify/utils',
-      'canvaskit-wasm',
-      'culori',
-      'diff',
-      'expr-eval',
-      'fflate',
-      'fontoxpath',
-      'fzstd',
-      'nanoevents',
-      'opentype.js',
-      'sucrase',
-      'svgpath',
-      'yoga-layout',
-      /^node:/
-    ],
-    onlyBundle: false
-  }
-})
+export default defineConfig(
+  libraryConfig({
+    entry: ['src/**/*.ts', '!src/**/*.d.ts'],
+    // Prompts and the authoring reference import Markdown as text.
+    plugins: [raw()],
+    chunks: 'unbundle',
+    // Core's modules may run code when imported, so their imports keep their order.
+    treeshake: true,
+    // The runtime assets module's `?url` imports stay as written, for the host's Vite.
+    neverBundle: [/\?url$/]
+  })
+)

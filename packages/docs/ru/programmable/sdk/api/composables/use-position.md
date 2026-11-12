@@ -1,44 +1,38 @@
 ---
 title: usePosition
-description: Чтение и обновление позиции, размера, поворота, выравнивания и отражения выбранного узла.
+description: Чтение и изменение положения, размера, поворота, выравнивания и отражения выделенного объекта.
 ---
 
 # usePosition
 
-`usePosition()` — компосабл управления для UI, связанного с позицией.
+`usePosition()` предоставляет панелям положения и размера значения выделения: `panelProp(key)` для `'x'`, `'y'`, `'width'`, `'height'` и `'rotation'` возвращает значение поля, округлённое до двух знаков, как в панели Figma, или `MIXED`, если выделенные слои показывают разные значения. Сами слои сохраняют точные значения.
 
-Предоставляет значения выбранного узла:
+Также доступны действия:
 
-- `x`
-- `y`
-- `width`
-- `height`
-- `rotation`
-
-и действия:
-
-- выравнивание
-- отражение
-- поворот
-- скрабинг/обновление числовых свойств
+- выравнивание;
+- отражение;
+- поворот;
+- предварительное и окончательное изменение числовых свойств.
 
 ## Использование
 
 ```ts
-import { usePosition } from '@open-pencil/vue'
+import { usePosition } from '@open-pencil/vue/controls/position'
 
 const position = usePosition()
 ```
 
-## Базовый пример
+## Пример
 
 ```ts
-const { x, y, width, height, rotation, updateProp, commitProp } = usePosition()
+const { panelProp, updateProp, commitProp } = usePosition()
+const x = panelProp('x')
+const width = panelProp('width')
 ```
 
-## Практические примеры
+## Примеры
 
-### Выровнять выбранные узлы
+### Выровнять выделенные объекты
 
 ```ts
 position.align('horizontal', 'center')

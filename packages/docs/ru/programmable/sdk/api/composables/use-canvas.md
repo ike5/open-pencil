@@ -1,27 +1,28 @@
 ---
 title: useCanvas
-description: Подключение рендеринга на базе CanvasKit к элементу canvas для редактора OpenPencil.
+description: Подключение отрисовки CanvasKit к элементу canvas редактора OpenPencil.
 ---
 
 # useCanvas
 
-`useCanvas()` подключает редактор к реальному элементу `<canvas>`.
+`useCanvas()` подключает редактор к элементу `<canvas>`.
 
 Обрабатывает:
 
 - инициализацию CanvasKit
-- создание поверхности
-- планирование рендеринга
-- обработку изменения размера
-- опциональное отображение линеек
-- коллбэк готовности рендерера
+- создание surface;
+- постановку отрисовки в очередь;
+- изменение размера;
+- отображение линеек, если оно включено;
+- вызов функции после готовности renderer.
 
 ## Использование
 
 ```ts
 import { ref } from 'vue'
 
-import { useCanvas, useEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -35,7 +36,8 @@ useCanvas(canvasRef, editor)
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { useCanvas, useEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -63,7 +65,7 @@ useCanvas(canvasRef, editor, {
 })
 ```
 
-### Сохранять буфер рисования для скриншотов
+### Сохранить drawing buffer для снимков экрана
 
 ```ts
 useCanvas(canvasRef, editor, {
@@ -73,9 +75,9 @@ useCanvas(canvasRef, editor, {
 
 ## Примечания
 
-- `useCanvas()` работает с рендерером и на практике используется только в браузере
-- отвечает за конвейер живого холста, а не за файловые потоки на уровне приложения
-- обычно следует использовать вместе с `useCanvasInput()` для обработки взаимодействий
+- `useCanvas()` работает с renderer и предназначен для браузера;
+- он управляет работающим холстом, но не открытием и сохранением файлов;
+- для обработки действий пользователя его обычно дополняют `useCanvasInput()`.
 
 ## Связанные API
 

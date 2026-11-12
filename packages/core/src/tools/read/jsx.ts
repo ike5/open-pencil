@@ -1,25 +1,33 @@
-import { createTwoFilesPatch } from 'diff'
+import * as v from 'valibot'
 
-import { sceneNodeToJSX } from '#core/io/formats/jsx'
-import { defineTool } from '#core/tools/schema'
+import { sceneNodeToJSX } from '@open-pencil/design-jsx'
+
+import { graphOf } from '#core/figma-api/graph'
+import { jsxPatch } from '#core/tools/analyze/diff/jsx'
+import { nodeIdInputSchema, nodeComparisonInputSchema, defineTool } from '#core/tools/schema'
 
 const MAX_JSX_LENGTH = 12_000
 
-export const getJsx = defineTool({
+export const getJSX = defineTool({
   name: 'get_jsx',
   description:
     'Get JSX representation of a node and its children. Compact round-trip format — same syntax as the render tool.',
-  params: {
-    id: { type: 'string', description: 'Node ID', required: true },
-    path: {
-      type: 'string',
-      description: 'Write JSX to this path instead of returning it (requires OPENPENCIL_MCP_ROOT)'
-    }
-  },
+  execution: { kind: 'sync', mutation: 'none' },
+  input: v.strictObject({
+    id: nodeIdInputSchema,
+    path: v.optional(
+      v.pipe(
+        v.string(),
+        v.description(
+          'Write JSX to this path instead of returning it (requires OPENPENCIL_MCP_ROOT)'
+        )
+      )
+    )
+  }),
   execute: (figma, { id }) => {
     const node = figma.getNodeById(id)
     if (!node) return { error: `Node "${id}" not found` }
-    const jsx = sceneNodeToJSX(id, figma.graph)
+    const jsx = sceneNodeToJSX(id, graphOf(figma))
     if (jsx.length > MAX_JSX_LENGTH) {
       return {
         id,
@@ -33,34 +41,26 @@ export const getJsx = defineTool({
   }
 })
 
-export const diffJsx = defineTool({
+export const diffJSX = defineTool({
   name: 'diff_jsx',
   description:
     'Structural diff between two nodes in JSX format. Shows added/removed children, changed props.',
-  params: {
-    from: { type: 'string', description: 'Source node ID', required: true },
-    to: { type: 'string', description: 'Target node ID', required: true }
-  },
+  execution: { kind: 'sync', mutation: 'none' },
+  // Kept for `open-pencil diff jsx`; agents get diff_nodes, which also gives an appliable patch.
+  exposure: { mcp: false, ai: false, webmcp: false },
+  input: nodeComparisonInputSchema,
   execute: (figma, { from, to }) => {
     const fromNode = figma.getNodeById(from)
     if (!fromNode) return { error: `Node "${from}" not found` }
     const toNode = figma.getNodeById(to)
     if (!toNode) return { error: `Node "${to}" not found` }
 
-    const fromJsx = sceneNodeToJSX(from, figma.graph)
-    const toJsx = sceneNodeToJSX(to, figma.graph)
-
-    if (fromJsx === toJsx) return { diff: null, message: 'No differences' }
-
-    const patch = createTwoFilesPatch(
+    const patch = jsxPatch(
       fromNode.name,
       toNode.name,
-      fromJsx,
-      toJsx,
-      'source',
-      'target',
-      { context: 3 }
+      sceneNodeToJSX(from, graphOf(figma)),
+      sceneNodeToJSX(to, graphOf(figma))
     )
-    return { diff: patch }
+    return patch === null ? { diff: null, message: 'No differences' } : { diff: patch }
   }
 })

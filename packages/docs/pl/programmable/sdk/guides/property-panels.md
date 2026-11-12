@@ -1,18 +1,17 @@
 ---
 title: Panele właściwości
-description: Buduj panele właściwości z kompozytami kontrolek i bezstanowymi prymitywami list.
+description: Tworzenie paneli właściwości za pomocą composables i komponentów bez narzuconego wyglądu.
 ---
 
 # Panele właściwości
 
-Panele właściwości w `@open-pencil/vue` są celowo oparte na kompozytach.
+Panele właściwości w `@open-pencil/vue` są budowane przede wszystkim za pomocą composables.
 
-Jeśli panel potrzebuje głównie wartości pochodnych od selekcji i akcji aktualizacji, preferuj kompozyty.
-Jeśli panel potrzebuje wielokrotnie używalnej struktury tablicowej/listowej, użyj bezstanowego prymitywu jak `PropertyListRoot`.
+Jeśli panel potrzebuje wartości obliczonych z zaznaczenia i działań do ich zmiany, użyj composable. Jeśli ważna jest wielokrotnego użytku struktura tablicy lub listy, wybierz komponent bez narzuconego wyglądu, na przykład `PropertyListRoot`.
 
-## Typowe kompozyty kontrolek
+## Główne composables
 
-Dla standardowych sekcji właściwości zacznij od:
+Do zwykłych sekcji panelu właściwości służą:
 
 - `usePosition()`
 - `useLayout()`
@@ -20,58 +19,93 @@ Dla standardowych sekcji właściwości zacznij od:
 - `useTypography()`
 - `useExport()`
 
-Dla paneli listowych użyj:
+Do właściwości przedstawianych jako listy:
 
 - `useFillControls()`
 - `useStrokeControls()`
 - `useEffectsControls()`
 
-## Przykład: panel pozycji
+## Pola powiązane ze zmiennymi
+
+Jeśli wartość pola można powiązać ze zmienną albo zewnętrznym tokenem projektu, umieść pole wewnątrz `BindableValueRoot`.
+
+- Gdy pole nie jest edytowane, pokazuj nazwę zmiennej. Obliczoną wartość można wyświetlić na przykład w dymku.
+- Uzyskanie fokusu i otwarcie wyboru zmiennej nie powinny usuwać powiązania.
+- Stosuj `detach-on-edit`, `readonly-when-bound` albo `edit-variable` dopiero po rzeczywistej zmianie wartości.
+- Osobne działanie usunięcia powiązania lepiej umieścić w oknie wyboru niż w łatwej do przypadkowego użycia ikonie obok pola.
+- Zmianę powiązania, jego usunięcie podczas edycji i zmianę wielu obiektów wykonuj w jednej operacji zbiorczej dostawcy.
+
+Aplikacja OpenPencil pokazuje nazwę zmiennej na fioletowym tle, gdy pole nie jest edytowane. Po rozpoczęciu edycji `NumberField` pokazuje obliczoną wartość liczbową. Własny interfejs może przedstawić ten sam stan inaczej.
+
+## Przykład: położenie i rozmiar
 
 ```vue
 <script setup lang="ts">
-import { usePosition } from '@open-pencil/vue'
+import { MIXED } from '@open-pencil/vue/controls/node-props'
+import { usePosition } from '@open-pencil/vue/controls/position'
 
-const { x, y, width, height, updateProp, commitProp } = usePosition()
+const { panelProp, updateProp, commitProp } = usePosition()
+const x = panelProp('x')
+const y = panelProp('y')
+const width = panelProp('width')
+const height = panelProp('height')
+// A multi-selection whose layers show different values shows an empty field.
+const shown = (value: number | typeof MIXED) => (value === MIXED ? '' : value)
+// Applied on change, so the rounded value replaces the text only once typing is done.
+function set(key: 'x' | 'y' | 'width' | 'height', event: Event) {
+  const value = Number((event.target as HTMLInputElement).value)
+  updateProp(key, value)
+  commitProp(key, value, value)
+}
 </script>
 
 <template>
   <div class="grid grid-cols-2 gap-2">
-    <input :value="x" @input="updateProp('x', Number(($event.target as HTMLInputElement).value))" />
-    <input :value="y" @input="updateProp('y', Number(($event.target as HTMLInputElement).value))" />
-    <input :value="width" @input="updateProp('width', Number(($event.target as HTMLInputElement).value))" />
-    <input :value="height" @input="updateProp('height', Number(($event.target as HTMLInputElement).value))" />
+    <input :value="shown(x)" @change="set('x', $event)" />
+    <input :value="shown(y)" @change="set('y', $event)" />
+    <input :value="shown(width)" @change="set('width', $event)" />
+    <input :value="shown(height)" @change="set('height', $event)" />
   </div>
 </template>
 ```
 
-## Przykład: panel wypełnień
+## Przykład: lista zalew
 
 ```vue
 <script setup lang="ts">
-import { PropertyListRoot, useFillControls } from '@open-pencil/vue'
+import { PropertyListRoot } from '@open-pencil/vue/primitives/PropertyList'
+import { useEditorPropertyList } from '@open-pencil/vue/controls/property-list'
+import { useFillControls } from '@open-pencil/vue/controls/fill'
 
 const fillControls = useFillControls()
+const fills = useEditorPropertyList('fills')
 </script>
 
 <template>
-  <PropertyListRoot prop-key="fills" v-slot="{ items, add, remove }">
+  <PropertyListRoot
+    prop-key="fills"
+    :items="fills.items.value"
+    :mixed="fills.isMixed.value"
+    @add="fills.actions.add"
+    @remove="fills.actions.remove"
+    v-slot="{ items, actions }"
+  >
     <div v-for="(fill, index) in items" :key="index">
       {{ fill.type }}
-      <button @click="remove(index)">Usuń</button>
+      <button @click="actions.remove(index)">Usuń</button>
     </div>
 
-    <button @click="add(fillControls.defaultFill)">Dodaj wypełnienie</button>
+    <button @click="actions.add(fillControls.defaultFill)">Dodaj zalew</button>
   </PropertyListRoot>
 </template>
 ```
 
-## Zasada
+## Wybór API
 
-- używaj kompozytów dla bezpośredniej logiki kontrolek
-- używaj prymitywów strukturalnych, gdy powtarzalna koordynacja listy/drzewa/slotu jest trudną częścią
+- Używaj composables do stanu i działań.
+- Używaj komponentów strukturalnych bez narzuconego wyglądu, gdy główną trudnością jest koordynacja powtarzających się list, drzew albo slotów.
 
-## Powiązane API
+## Zobacz też
 
 - [usePosition](../api/composables/use-position)
 - [useLayout](../api/composables/use-layout)

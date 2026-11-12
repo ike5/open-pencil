@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
-import { expectDefined } from '#tests/helpers/assert'
+import { expectDefined } from '@open-pencil/test-support/assert'
+
 import { CanvasHelper } from '#tests/helpers/canvas'
 import { getSelectedNode, getEditingTextId, getNodeById } from '#tests/helpers/store'
 
@@ -11,7 +12,7 @@ test.describe.configure({ mode: 'serial' })
 
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage()
-  await page.goto('/')
+  await page.goto('/?test')
   canvas = new CanvasHelper(page)
   await canvas.waitForInit()
   await canvas.clearCanvas()
@@ -44,6 +45,80 @@ test('double-click enters text edit mode', async () => {
   canvas.assertNoErrors()
 })
 
+test('typography controls use compact labeled anatomy', async () => {
+  await canvas.pressKey('Escape')
+  await canvas.waitForRender()
+  await canvas.click(275, 215)
+  await canvas.waitForRender()
+
+  const typography = page.getByRole('region', { name: 'Typography' })
+  await expect(typography.getByRole('button', { name: 'Font family' })).toBeVisible()
+  await expect(typography.getByRole('combobox', { name: 'Font weight' })).toBeVisible()
+  await expect(typography.getByRole('spinbutton', { name: 'Font size' })).toBeVisible()
+  await expect(typography.getByRole('spinbutton', { name: 'Line height' })).toBeVisible()
+  await expect(typography.getByRole('spinbutton', { name: 'Letter spacing' })).toBeVisible()
+  await expect(typography.getByRole('combobox', { name: 'Direction' })).toBeVisible()
+  await expect(typography.getByRole('combobox', { name: 'Text case' })).toBeVisible()
+  await expect(typography.getByRole('combobox', { name: 'Truncation' })).toBeVisible()
+  await expect(typography.getByRole('switch', { name: 'Standard ligatures' })).toBeVisible()
+
+  const alignment = typography.getByRole('group', { name: 'Text alignment' })
+  await expect(alignment.getByRole('button', { name: 'Align left' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+  await alignment.getByRole('button', { name: 'Align center horizontally' }).click()
+  await canvas.waitForRender()
+  await expect(
+    alignment.getByRole('button', { name: 'Align center horizontally' })
+  ).toHaveAttribute('aria-pressed', 'true')
+
+  await expect(typography).toHaveScreenshot('typography-panel.png')
+})
+
+test('advanced typography controls update case, alignment, truncation, and features', async () => {
+  const typography = page.getByRole('region', { name: 'Typography' })
+  const nodeId = expectDefined(await getSelectedNode(page), 'selected text node').id
+
+  const vertical = typography.getByRole('group', { name: 'Vertical text alignment' })
+  await vertical.getByRole('button', { name: 'Align bottom' }).click()
+
+  await typography.getByRole('combobox', { name: 'Text case' }).click()
+  await page.getByRole('option', { name: 'Uppercase' }).click()
+
+  await typography.getByRole('combobox', { name: 'Truncation' }).click()
+  await page.getByRole('option', { name: 'Ending ellipsis' }).click()
+  const maxLines = typography.getByRole('spinbutton', { name: 'Maximum lines' })
+  await maxLines.click()
+  await page.keyboard.press('Meta+a')
+  await page.keyboard.type('2')
+  await page.keyboard.press('Enter')
+
+  await typography.getByRole('switch', { name: 'Standard ligatures' }).click()
+  await canvas.waitForRender()
+
+  const node = await page.evaluate((id) => {
+    const store = window.openPencil?.getStore?.()
+    const current = store?.graph.getNode(id)
+    return current
+      ? {
+          textAlignVertical: current.textAlignVertical,
+          textCase: current.textCase,
+          textTruncation: current.textTruncation,
+          maxLines: current.maxLines,
+          fontFeatures: current.fontFeatures
+        }
+      : null
+  }, nodeId)
+  expect(node).toMatchObject({
+    textAlignVertical: 'BOTTOM',
+    textCase: 'UPPER',
+    textTruncation: 'ENDING',
+    maxLines: 2
+  })
+  expect(node?.fontFeatures).toContainEqual({ tag: 'LIGA', enabled: false })
+})
+
 test('bold button toggles fontWeight to 700 then back to 400', async () => {
   await canvas.pressKey('Escape')
   await canvas.waitForRender()
@@ -62,7 +137,9 @@ test('bold button toggles fontWeight to 700 then back to 400', async () => {
   }, nodeId)
   await canvas.waitForRender()
 
-  const boldBtn = page.locator('[data-test-id="typography-bold-button"]')
+  const boldBtn = page.getByRole('toolbar', { name: 'Text formatting' }).getByRole('button', {
+    name: /^Bold/
+  })
   await expect(boldBtn).toBeVisible({ timeout: 3000 })
   await page.waitForTimeout(200)
   await boldBtn.click()
@@ -72,7 +149,7 @@ test('bold button toggles fontWeight to 700 then back to 400', async () => {
   const bold = await getNodeById(page, nodeId)
   expect(bold?.fontWeight).toBe(700)
 
-  await page.locator('[data-test-id="typography-bold-button"]').click()
+  await boldBtn.click()
   await page.waitForTimeout(500)
   await canvas.waitForRender()
 

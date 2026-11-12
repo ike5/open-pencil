@@ -1,18 +1,18 @@
 ---
 title: useI18n
-description: Чтение локализованных сообщений интерфейса OpenPencil и переключение активной локали SDK.
+description: Получение переведённых сообщений интерфейса OpenPencil и выбор языка SDK.
 ---
 
 # useI18n
 
-`useI18n()` возвращает реактивные группы переводов и элементы управления локалью для оболочек редактора на базе OpenPencil.
+`useI18n()` возвращает реактивные группы переведённых сообщений и функции для выбора языка интерфейса.
 
-Используйте его, когда нужны метки меню, команд, панелей, страниц и диалогов, поддерживаемые SDK, или когда нужно позволить пользователям переключать локаль.
+Он нужен, если интерфейс использует подготовленные в SDK подписи для меню, команд, панелей, страниц и диалогов либо позволяет пользователю выбрать язык.
 
 ## Использование
 
 ```ts
-import { useI18n } from '@open-pencil/vue'
+import { useI18n } from '@open-pencil/vue/i18n'
 
 const { menu, commands, panels, locale, availableLocales, localeLabels, setLocale } = useI18n()
 ```
@@ -34,7 +34,7 @@ const { menu, commands, panels, locale, availableLocales, localeLabels, setLocal
 
 ```vue
 <script setup lang="ts">
-import { useI18n } from '@open-pencil/vue'
+import { useI18n } from '@open-pencil/vue/i18n'
 
 const { menu, locale, availableLocales, localeLabels, setLocale } = useI18n()
 </script>
@@ -53,8 +53,8 @@ const { menu, locale, availableLocales, localeLabels, setLocale } = useI18n()
 
 ## Примечания
 
-- изменения локали реактивно распространяются на все группы сообщений SDK
-- SDK также экспортирует низкоуровневые примитивы локали для прямого доступа к хранилищу
+- при смене языка все группы сообщений SDK обновляются автоматически;
+- для прямого доступа к хранилищу SDK также экспортирует низкоуровневый locale API.
 
 ## Связанные API
 

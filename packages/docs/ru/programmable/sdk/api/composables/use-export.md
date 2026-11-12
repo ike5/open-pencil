@@ -5,19 +5,19 @@ description: Управление настройками экспорта — м
 
 # useExport
 
-`useExport()` — компосабл панели экспорта для выбранных узлов.
+`useExport()` предоставляет состояние и действия для панели экспорта выбранных объектов.
 
-Управляет:
+Он содержит:
 
-- строками настроек экспорта
-- id выбранных узлов
-- именованием экспорта
-- поддерживаемыми масштабами и форматами
+- настройки экспорта;
+- ID выбранных объектов;
+- имя экспортируемого файла;
+- доступные масштабы и форматы (идентификаторы `formats` и подписанные `formatOptions`).
 
 ## Использование
 
 ```ts
-import { useExport } from '@open-pencil/vue'
+import { useExport } from '@open-pencil/vue/document/export'
 
 const exportState = useExport()
 ```
@@ -30,6 +30,7 @@ const {
   nodeName,
   scales,
   formats,
+  formatOptions,
   addSetting,
   updateScale,
   updateFormat,
@@ -38,7 +39,7 @@ const {
 
 ## Практические примеры
 
-### Добавить ещё один пресет экспорта
+### Добавить ещё один вариант экспорта
 
 ```ts
 exportState.addSetting()
@@ -48,7 +49,7 @@ exportState.addSetting()
 
 ```ts
 exportState.updateScale(0, 2)
-exportState.updateFormat(0, 'WEBP')
+exportState.updateFormat(0, 'webp')
 ```
 
 ## Связанные API

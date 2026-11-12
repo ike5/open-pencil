@@ -1,60 +1,130 @@
 /**
  * Tool definition schema.
  *
- * Each tool is defined once with typed params and an execute function
- * that operates on FigmaAPI. Adapters for AI chat (valibot), CLI (citty),
- * and MCP (JSON Schema) are generated from these definitions.
+ * Native Valibot inputs and execution capabilities are owned by each tool.
+ * Adapters consume these contracts rather than maintaining transport-specific schemas.
  */
 
+import {
+  // eslint-disable-next-line @open-pencil/structure/no-mixed-case-acronym-identifiers -- Upstream export spelling.
+  toJsonSchema as toJSONSchema,
+  // eslint-disable-next-line @open-pencil/structure/no-mixed-case-acronym-identifiers -- Upstream export spelling.
+  type toStandardJsonSchema as toStandardJSONSchema
+} from '@valibot/to-json-schema'
+import * as v from 'valibot'
+
+import type { SceneNode } from '@open-pencil/scene-graph'
+
 import type { FigmaAPI, FigmaNodeProxy } from '#core/figma-api'
-import type { SceneNode } from '#core/scene-graph'
+import type { FigmaFontNameInput } from '#core/figma-api/fonts/names'
+import { graphOf } from '#core/figma-api/graph'
 
-export type ParamType = 'string' | 'number' | 'boolean' | 'color' | 'string[]'
+/** The number each `toolNumber` input takes, by the union that also takes a numeric string. */
+const toolNumberSchemas = new WeakMap<v.GenericSchema, v.GenericSchema>()
 
-export interface ParamDef {
-  type: ParamType
-  description: string
-  required?: boolean
-  default?: unknown
-  enum?: string[]
-  min?: number
-  max?: number
-}
+export type ToolCapability =
+  | 'document:read'
+  | 'document:write'
+  | 'filesystem:read'
+  | 'filesystem:write'
+  | 'network:access'
+  | 'code:execute'
+  | 'settings:read'
+  | 'settings:write'
 
-export interface ToolDef {
+export type ToolExecution =
+  | { kind: 'sync'; mutation: 'none' | 'view' | 'properties' | 'document' }
+  | { kind: 'async'; mutation: 'none' | 'view' | 'document' }
+
+export type ToolInterface = 'mcp' | 'ai' | 'webmcp'
+export type ToolExposure = Partial<Record<ToolInterface, boolean>>
+
+interface ToolMetadata {
   name: string
   description: string
-  mutates?: boolean
-  params: Record<string, ParamDef>
+  execution: ToolExecution
+  /** Interface inclusion defaults to true; execution support and user permissions remain separate. */
+  exposure: ToolExposure
+  capabilities: readonly ToolCapability[]
+  availability: 'default' | 'eval'
+}
+
+export interface ToolDef extends ToolMetadata {
+  input: v.StrictObjectSchema<v.ObjectEntries, undefined>
+  /** Derived from execution metadata, never declared independently by a tool. */
+  readonly mutates: boolean
+  /**
+   * Loads the fonts the call's text edits need, as a Figma plugin loads them before it edits
+   * text; rejects when one cannot load. Every executor awaits it before `execute`, so a
+   * synchronous tool still edits in one step.
+   */
+  loadFonts: (figma: FigmaAPI, args: Record<string, unknown>) => Promise<void>
   execute: (figma: FigmaAPI, args: Record<string, unknown>) => unknown
 }
 
-type ResolvedType<T extends ParamType> = T extends 'string'
-  ? string
-  : T extends 'number'
-    ? number
-    : T extends 'boolean'
-      ? boolean
-      : T extends 'color'
-        ? string
-        : T extends 'string[]'
-          ? string[]
-          : never
+type ToolDefinitionMetadata = Omit<ToolMetadata, 'exposure' | 'capabilities' | 'availability'> &
+  Partial<Pick<ToolMetadata, 'exposure' | 'capabilities' | 'availability'>>
 
-type ResolvedParams<P extends Record<string, ParamDef>> = {
-  [K in keyof P as P[K]['required'] extends true ? K : never]: ResolvedType<P[K]['type']>
-} & {
-  [K in keyof P as P[K]['required'] extends true ? never : K]?: ResolvedType<P[K]['type']>
+export function defineTool<P extends v.ObjectEntries, R>(
+  def: ToolDefinitionMetadata & {
+    input: v.StrictObjectSchema<P, undefined>
+    execution: ToolExecution & (R extends PromiseLike<unknown> ? { kind: 'async' } : unknown)
+    /** The fonts a call's text edits need loaded first; text edits refuse unloaded fonts. */
+    fonts?: (
+      figma: FigmaAPI,
+      args: v.InferOutput<v.StrictObjectSchema<P, undefined>>
+    ) => FigmaFontNameInput[]
+    execute: (figma: FigmaAPI, args: v.InferOutput<v.StrictObjectSchema<P, undefined>>) => R
+  }
+): ToolDef {
+  const { fonts } = def
+  return {
+    ...def,
+    exposure: def.exposure ?? {},
+    capabilities: def.capabilities ?? [
+      toolChangesDocument(def) ? 'document:write' : 'document:read'
+    ],
+    availability: def.availability ?? 'default',
+    get mutates() {
+      return def.execution.mutation !== 'none'
+    },
+    async loadFonts(figma, args) {
+      if (!fonts) return
+      // Wrong arguments are for `execute` to report.
+      const parsed = v.safeParse(def.input, args)
+      if (!parsed.success) return
+      for (const font of fonts(figma, parsed.output)) await figma.loadFontAsync(font)
+    },
+    execute: (figma, args) => def.execute(figma, parseToolArgs(def.name, def.input, args))
+  }
 }
 
-export function defineTool<P extends Record<string, ParamDef>>(def: {
-  name: string
-  description: string
-  mutates?: boolean
-  params: P
-  execute: (figma: FigmaAPI, args: ResolvedParams<P>) => unknown
-}): ToolDef {
-  return def as ToolDef
+/**
+ * Every tool run goes through here, so a wrong call from AI chat, the CLI, or WebMCP names the
+ * tool and lists each problem with its argument, as `v.summarize` formats them. MCP clients get
+ * the MCP SDK's own report, which validates the same schema before the handler runs. Inputs are
+ * strict objects, so a misspelled or mis-nested argument fails here instead of being dropped.
+ */
+export function parseToolArgs<S extends v.GenericSchema>(
+  name: string,
+  schema: S,
+  args: unknown
+): v.InferOutput<S> {
+  const result = v.safeParse(schema, args)
+  if (result.success) return result.output
+  throw new Error(`Invalid arguments for ${name}:\n${v.summarize(result.issues)}`)
+}
+
+export function toolChangesDocument(def: Pick<ToolDef, 'execution'>): boolean {
+  return def.execution.mutation === 'properties' || def.execution.mutation === 'document'
+}
+
+export function isToolExposed(def: Pick<ToolDef, 'exposure'>, target: ToolInterface): boolean {
+  return def.exposure[target] !== false
+}
+
+export function isAtomicTool(def: ToolDef): boolean {
+  return def.execution.kind === 'sync' && def.execution.mutation === 'properties'
 }
 
 export class NodeNotFoundError extends Error {
@@ -70,6 +140,21 @@ export function requireNode(figma: FigmaAPI, id: string): ReturnType<FigmaAPI['g
   return node
 }
 
+export function requireNodes(figma: FigmaAPI, ids: ReadonlyArray<string>): FigmaNodeProxy[] | null {
+  const nodes: FigmaNodeProxy[] = []
+  for (const id of ids) {
+    const node = figma.getNodeById(id)
+    if (!node) return null
+    nodes.push(node)
+  }
+  return nodes
+}
+
+/** A tool's answer when the operation it wraps throws: the error's message for the caller. */
+export function toolFailure(error: unknown): { error: string } {
+  return { error: error instanceof Error ? error.message : String(error) }
+}
+
 export function nodeNotFound(id: string): { error: string } {
   return { error: `Node "${id}" not found` }
 }
@@ -78,7 +163,7 @@ export function getRawNodeOrError(
   figma: FigmaAPI,
   id: string
 ): { node: SceneNode } | { error: string } {
-  const node = figma.graph.getNode(id)
+  const node = graphOf(figma).getNode(id)
   return node ? { node } : nodeNotFound(id)
 }
 
@@ -88,4 +173,100 @@ export function nodeToResult(node: FigmaNodeProxy, maxDepth?: number): Record<st
 
 export function nodeSummary(node: FigmaNodeProxy): { id: string; name: string; type: string } {
   return { id: node.id, name: node.name, type: node.type }
+}
+
+/** A node's ID, under a name that says so; a description would only repeat it. */
+export const nodeIdInputSchema = v.string()
+export const nodeInputSchema = v.strictObject({ id: nodeIdInputSchema })
+export const nodeComparisonInputSchema = v.strictObject({
+  from: v.pipe(v.string(), v.description('Source node ID')),
+  to: v.pipe(v.string(), v.description('Target node ID'))
+})
+
+export function nodeTraversalInput(depthDescription: string) {
+  return v.strictObject({
+    id: nodeIdInputSchema,
+    depth: v.optional(toolNumber(v.pipe(v.number(), v.description(depthDescription))))
+  })
+}
+export const positionInputs = {
+  x: toolNumber(v.pipe(v.number(), v.description('X position in the parent, or on the page'))),
+  y: toolNumber(v.pipe(v.number(), v.description('Y position in the parent, or on the page')))
+}
+
+/** Reuse a native number schema for both numeric and numeric-string agent inputs. */
+export function toolNumber(schema: v.GenericSchema<number, number> = v.number()) {
+  const finite = v.pipe(schema, v.finite())
+  const input = v.union([
+    finite,
+    v.pipe(
+      v.string(),
+      v.regex(/\S/, 'Expected a nonblank numeric string'),
+      v.description(v.getDescription(schema) ?? 'Numeric value'),
+      v.transform(Number),
+      finite
+    )
+  ])
+  toolNumberSchemas.set(input, finite)
+  return input
+}
+
+/**
+ * The number a `toolNumber` input takes, without the numeric string it also accepts, for
+ * describing the input to clients in less space; `undefined` for any other schema.
+ */
+export function toolNumberSchema(schema: v.GenericSchema): v.GenericSchema | undefined {
+  return toolNumberSchemas.get(schema)
+}
+
+type JSONSchemaConfig = NonNullable<Parameters<typeof toJSONSchema>[1]>
+export type JSONSchemaTarget = NonNullable<JSONSchemaConfig['target']>
+
+const JSON_SCHEMA_TARGETS: readonly string[] = [
+  'draft-07',
+  'draft-2020-12',
+  'openapi-3.0'
+] satisfies JSONSchemaTarget[]
+
+function isJSONSchemaTarget(target: string): target is JSONSchemaTarget {
+  return JSON_SCHEMA_TARGETS.includes(target)
+}
+
+/** A Standard JSON Schema target `toJSONSchema` converts to; throws on any other. */
+export function jsonSchemaTarget(target: string): JSONSchemaTarget {
+  if (!isJSONSchemaTarget(target)) throw new Error(`Unsupported JSON Schema target: ${target}`)
+  return target
+}
+
+/**
+ * A tool input as JSON Schema. JSON numbers are always finite, so `toolNumber`'s `finite` check,
+ * which JSON Schema cannot express, is left to runtime validation.
+ */
+export function toolJSONSchema(schema: v.GenericSchema, config: JSONSchemaConfig = {}) {
+  return toJSONSchema(schema, {
+    ...config,
+    ignoreActions: ['finite', ...(config.ignoreActions ?? [])]
+  })
+}
+
+/** A tool input as a Standard JSON Schema, converted as `toolJSONSchema` converts it. */
+export function toolStandardJSONSchema<T extends v.GenericSchema>(
+  schema: T
+): ReturnType<typeof toStandardJSONSchema<T>> {
+  const convert =
+    (typeMode: 'input' | 'output') =>
+    (options: { target: string; libraryOptions?: Record<string, unknown> }) => {
+      const { ...json } = toolJSONSchema(schema, {
+        ...options.libraryOptions,
+        typeMode,
+        target: jsonSchemaTarget(options.target)
+      })
+      return json
+    }
+  return {
+    '~standard': {
+      ...schema['~standard'],
+      jsonSchema: { input: convert('input'), output: convert('output') }
+    }
+  }
 }

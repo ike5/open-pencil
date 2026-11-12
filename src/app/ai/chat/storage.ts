@@ -1,100 +1,161 @@
-import { useLocalStorage } from '@vueuse/core'
-import { computed, watch } from 'vue'
+import { isEqual } from 'es-toolkit'
+import { computed, ref, watch } from 'vue'
 
 import {
-  AI_PROVIDERS,
-  DEFAULT_AI_MODEL,
-  DEFAULT_AI_PROVIDER,
-  IS_BROWSER,
-  IS_TAURI
-} from '@open-pencil/core/constants'
-import type { AIProviderID } from '@open-pencil/core/constants'
-import { setPexelsApiKey, setUnsplashAccessKey } from '@open-pencil/core/tools'
+  designCustomAPIType,
+  designCustomBaseURL,
+  designCustomModelID,
+  designMaxOutputTokens,
+  designModelConnection,
+  designModelID,
+  designProviderDefinition,
+  designProviderID,
+  modelConnectionCredentialRef,
+  modelCredentialRevision
+} from '@/app/ai/models'
+import { OPENPENCIL_AI_PROVIDER } from '@/app/ai/providers/openpencil/provider'
+import { refreshWebSearchProvider } from '@/app/ai/search'
+import { enabledSkills } from '@/app/ai/skills/library'
+import { cloudAIAvailable } from '@/app/cloud/integration'
+import { appCredentialServices, browserCredentialsRemembered } from '@/app/settings/credentials/app'
+import {
+  credentialPersistenceRevision,
+  exaKeyStatus,
+  refreshMediaCredentials
+} from '@/app/settings/credentials/media'
+import {
+  hasLegacyCredential,
+  initializeCredentialMigration
+} from '@/app/settings/credentials/migration'
+import type { CredentialRef, CredentialStatus } from '@/app/settings/credentials/types'
+import { canRunHostProcesses } from '@/app/tauri/capabilities'
 
-const STORAGE_PREFIX = 'open-pencil:'
-const LEGACY_KEY_STORAGE = `${STORAGE_PREFIX}openrouter-api-key`
+export const providerID = designProviderID
+export const modelID = designModelID
+export const customBaseURL = designCustomBaseURL
+export const customModelID = designCustomModelID
+export const customAPIType = designCustomAPIType
+export const maxOutputTokens = designMaxOutputTokens
+export const providerDef = designProviderDefinition
 
-export function keyStorageKey(id: string) {
-  return `${STORAGE_PREFIX}ai-key:${id}`
-}
-
-function migrateLegacyStorage() {
-  const legacyKey = localStorage.getItem(LEGACY_KEY_STORAGE)
-  if (legacyKey) {
-    localStorage.setItem(keyStorageKey('openrouter'), legacyKey)
-    localStorage.removeItem(LEGACY_KEY_STORAGE)
-    if (!localStorage.getItem(`${STORAGE_PREFIX}ai-provider`)) {
-      localStorage.setItem(`${STORAGE_PREFIX}ai-provider`, 'openrouter')
-    }
-  }
-}
-
-if (IS_BROWSER) migrateLegacyStorage()
-
-export const providerID = useLocalStorage<AIProviderID>(
-  `${STORAGE_PREFIX}ai-provider`,
-  DEFAULT_AI_PROVIDER
-)
-const apiKeyStorageKey = computed(() => keyStorageKey(providerID.value))
-export const apiKey = useLocalStorage(apiKeyStorageKey, '')
-export const modelID = useLocalStorage(`${STORAGE_PREFIX}ai-model`, DEFAULT_AI_MODEL)
-export const customBaseURL = useLocalStorage(`${STORAGE_PREFIX}ai-base-url`, '')
-export const customModelID = useLocalStorage(`${STORAGE_PREFIX}ai-custom-model`, '')
-export const customAPIType = useLocalStorage<'completions' | 'responses'>(
-  `${STORAGE_PREFIX}ai-api-type`,
-  'completions'
-)
-export const maxOutputTokens = useLocalStorage(`${STORAGE_PREFIX}ai-max-output-tokens`, 16384)
-export const pexelsApiKey = useLocalStorage(`${STORAGE_PREFIX}pexels-api-key`, '')
-export const unsplashAccessKey = useLocalStorage(`${STORAGE_PREFIX}unsplash-access-key`, '')
-
-export const providerDef = computed(
-  () => AI_PROVIDERS.find((p) => p.id === providerID.value) ?? AI_PROVIDERS[0]
-)
+export const apiKeyStatus = ref<CredentialStatus>('missing')
+const credentialRevision = ref(0)
 
 export const isACPProvider = computed(() => providerID.value.startsWith('acp:'))
+export const isHarnessProvider = computed(() => providerID.value === 'harness:pi')
+export const isAgentProvider = computed(() => isACPProvider.value || isHarnessProvider.value)
 
 export const isConfigured = computed(() => {
-  if (isACPProvider.value) return IS_TAURI
-  if (!apiKey.value) return false
+  if (isACPProvider.value) return canRunHostProcesses()
+  // Pi can use the CLI's own sign-in, so a key is optional.
+  if (isHarnessProvider.value) return canRunHostProcesses()
+  // Cloud's AI service needs no key: the Home server's sign-in and a workspace stand in for one.
+  if (providerID.value === OPENPENCIL_AI_PROVIDER) {
+    return cloudAIAvailable.value && Boolean(designModelConnection.value?.cloudWorkspaceId)
+  }
+  if (apiKeyStatus.value !== 'configured') return false
   const needsBaseURL =
     providerID.value === 'openai-compatible' || providerID.value === 'anthropic-compatible'
-  if (needsBaseURL && !customBaseURL.value) return false
-  return true
+  return !needsBaseURL || Boolean(customBaseURL.value)
 })
 
-export function setAPIKey(key: string) {
-  apiKey.value = key
+async function refreshStatus(reference: CredentialRef): Promise<CredentialStatus> {
+  // A key the store cannot read is reported as unavailable rather than rejecting startup.
+  const status = await appCredentialServices.manager
+    .status(reference)
+    .catch((): CredentialStatus => 'unavailable')
+  return status === 'missing' && hasLegacyCredential(reference) ? 'configured' : status
 }
+
+function designCredentialReference(): CredentialRef | null {
+  const connection = designModelConnection.value
+  if (!connection || connection.providerID.startsWith('acp:')) return null
+  return modelConnectionCredentialRef(connection)
+}
+
+export async function refreshAIProviderStatus(): Promise<void> {
+  const reference = designCredentialReference()
+  const status = reference ? await refreshStatus(reference) : 'missing'
+  // A connection chosen while the lookup ran owns the status now.
+  if (isEqual(designCredentialReference(), reference)) apiKeyStatus.value = status
+}
+
+// Startup checks metadata only. Secret migration/resolution belongs to explicit provider use.
+export const credentialsReady = Promise.all([
+  refreshAIProviderStatus(),
+  refreshMediaCredentials()
+]).then(() => undefined)
+
+export async function resolveAPIKey(): Promise<string | null> {
+  await credentialsReady
+  await initializeCredentialMigration()
+  const reference = designCredentialReference()
+  return reference ? appCredentialServices.resolver.resolve(reference) : null
+}
+
+export async function setAPIKey(key: string): Promise<void> {
+  const reference = designCredentialReference()
+  if (!reference) return
+  // Migrate first so clearing also removes a value that only exists in legacy storage.
+  await initializeCredentialMigration()
+  const value = key.trim()
+  if (value) await appCredentialServices.manager.set(reference, value)
+  else await appCredentialServices.manager.clear(reference)
+  apiKeyStatus.value = await refreshStatus(reference)
+  credentialRevision.value++
+}
+
+export { browserCredentialsRemembered }
 
 export function registerAIChatEffects(markTransportDirty: () => void) {
   watch(
-    pexelsApiKey,
-    (key) => {
-      setPexelsApiKey(key || null)
-    },
-    { immediate: true }
-  )
-
-  watch(
-    unsplashAccessKey,
-    (key) => {
-      setUnsplashAccessKey(key || null)
-    },
-    { immediate: true }
-  )
-
-  watch(providerID, (id) => {
-    const def = AI_PROVIDERS.find((p) => p.id === id)
-    if (def?.defaultModel) {
-      modelID.value = def.defaultModel
+    () => designModelConnection.value?.id,
+    () => {
+      void refreshAIProviderStatus()
+      markTransportDirty()
     }
-    markTransportDirty()
-  })
-
+  )
   watch(modelID, markTransportDirty)
   watch(customModelID, markTransportDirty)
   watch(customAPIType, markTransportDirty)
-  watch(apiKey, markTransportDirty)
   watch(customBaseURL, markTransportDirty)
+  watch(maxOutputTokens, markTransportDirty)
+  // Signing in or out of the Home server makes Cloud's AI service available or not.
+  watch(cloudAIAvailable, markTransportDirty)
+  watch(credentialPersistenceRevision, () => {
+    void refreshAIProviderStatus()
+    markTransportDirty()
+  })
+  watch(credentialRevision, markTransportDirty)
+  // Pi gets the skills when its session starts; the built-in chat reads them per message anyway.
+  watch(
+    () =>
+      enabledSkills.value
+        .filter((skill) => skill.modelInvocable)
+        .map((skill) =>
+          [skill.name, skill.location, skill.description, skill.instructions, ...skill.files].join(
+            '\n'
+          )
+        )
+        .join('\0'),
+    markTransportDirty
+  )
+  // A key saved in Settings; the chat reads it when it builds its transport.
+  watch(modelCredentialRevision, () => {
+    void refreshAIProviderStatus()
+    markTransportDirty()
+  })
+  // `search_web` follows the saved Exa key and the Design model's Cloud workspace, for the chat
+  // and for agents reaching OpenPencil's tools.
+  watch(
+    () =>
+      [
+        exaKeyStatus.value,
+        cloudAIAvailable.value,
+        designModelConnection.value?.providerID,
+        designModelConnection.value?.cloudWorkspaceId
+      ] as const,
+    () => void refreshWebSearchProvider(designModelConnection.value ?? null),
+    { immediate: true }
+  )
 }

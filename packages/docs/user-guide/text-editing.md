@@ -69,15 +69,32 @@ Open the font picker in the Typography section of the properties panel to change
 - **Virtual scroll** — handles large font lists efficiently
 - **Scroll-to-current** — the current font is highlighted when the picker opens
 
+## Text on a Path
+
+Imported Figma text-on-path layers retain their curved glyph layout. You can edit their text and typography, resize and select them, and save or export the result while preserving the path layout. This is support for existing imported path-text layers, not a separate drawing tool for attaching arbitrary text to a new path.
+
 ## Font Weight
 
 Change the font weight in the Typography section of the properties panel. Available weights depend on the selected font family (e.g., Regular, Medium, Bold, Black).
 
+## Variable Fonts
+
+When the text's font is variable, such as Inter, the Typography section lists its axes (weight, optical size, width, and any others the font has) with the value each is drawn at. Type or drag a value to set it; choosing a weight, slant, or family puts the axes back at that style's own. Optical size reads **Auto** while it follows the font size; set a value, or choose **Fixed** from its menu, to hold it, and **Auto** to follow the size again.
+
 ## Font Sources
 
 - **Default font** — Inter is loaded automatically
-- **Desktop app** — all system fonts are available
-- **Browser** — system fonts are available in Chrome and Edge
+- **Desktop app** — system fonts plus enabled Google Fonts, Fontsource, Bunny Fonts, and Fontshare catalogs
+- **Browser** — system fonts are available in Chrome and Edge with local-font permission. Enabled Fontsource, Bunny Fonts, and Fontshare providers can load online fonts, subject to network access and browser CORS rules; Google Fonts is disabled in the OpenPencil browser app
+- **Downloaded fonts** — the desktop app caches downloaded faces for reuse on the same machine
+
+Allow system font access and choose online providers in **Settings › Fonts**, which the gear next to the font family opens; in the desktop app it also manages downloaded fonts and fallback packs.
+
+## Missing Fonts and Substitutions
+
+When a requested family or style cannot be loaded, OpenPencil displays a warning above the editor instead of silently treating fallback rendering as faithful typography.
+
+Expand the warning to see every affected face and its active substitute. Use **Select layers** to locate all affected text nodes or **Retry fonts** after changing network access, local-font permission, or provider settings. A style may be synthesized from another loaded face in the same family; a missing family falls back to Inter when available.
 
 ## Tips
 

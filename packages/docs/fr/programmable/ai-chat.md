@@ -1,64 +1,52 @@
 ---
-title: Chat IA
-description: Assistant IA intégré avec plus de 90 outils pour créer et modifier des designs.
+title: Chat avec l’AI
+description: Assistant intégré avec plus de 90 outils pour créer, modifier et analyser des designs.
 ---
 
-# Chat IA
+# Chat avec l’AI
 
-Appuyez sur <kbd>⌘</kbd><kbd>J</kbd> (<kbd>Ctrl</kbd> + <kbd>J</kbd>) pour ouvrir l'assistant IA. Décrivez ce que vous voulez — il crée des formes, définit des styles, gère la mise en page, travaille avec les composants et analyse votre design.
+Appuyez sur <kbd>⌘</kbd><kbd>J</kbd> ou <kbd>Ctrl</kbd><kbd>J</kbd>. L’assistant peut créer des formes, modifier des styles, configurer des dispositions, travailler avec les composants et analyser le document.
 
-## Configuration
+## Configurer les modèles
 
-1. Ouvrez le panneau de chat IA (<kbd>⌘</kbd><kbd>J</kbd>)
-2. Cliquez sur l'icône de paramètres
-3. Choisissez un fournisseur et entrez votre clé API
-4. Sélectionnez un modèle
+Au premier lancement, la configuration guidée demande pour quoi l’IA doit vous aider et ce que vous utilisez déjà : un agent de code comme Claude Code, Codex, Antigravity CLI, Gemini CLI, Cursor ou Grok Build dans l’application de bureau, un compte API, ou un serveur local ou d’entreprise. Elle connecte cet accès et l’attribue aux rôles **Design agent** et **Vision**, sans toucher à ce que vous avez configuré à la main. Avec OpenRouter, il suffit de se connecter au lieu de coller une clé API. Vous pouvez la passer et la relancer depuis **Réglages → IA et agents → Lancer la configuration guidée**. Pour configurer les modèles à la main :
 
-### Fournisseurs pris en charge
+1. Ouvrez le chat.
+2. Sélectionnez l’icône des réglages.
+3. Ajoutez un profil et configurez la connexion, l’identifiant du modèle, les identifiants d’accès et les capacités.
 
-| Fournisseur | Modèles | Configuration |
-|-------------|---------|---------------|
-| **OpenRouter** | Claude, GPT-4, Gemini, DeepSeek et autres | Clé API de [openrouter.ai](https://openrouter.ai) |
-| **Anthropic** | Claude 3.5 Sonnet, Claude 3 Opus, etc. | Clé API de [console.anthropic.com](https://console.anthropic.com) |
-| **OpenAI** | GPT-4o, GPT-4, etc. | Clé API de [platform.openai.com](https://platform.openai.com) |
-| **Google AI** | Gemini 2.0, Gemini 1.5, etc. | Clé API de [aistudio.google.dev](https://aistudio.google.dev) |
-| **Compatible OpenAI** | Tout endpoint au format API OpenAI | URL de base personnalisée + clé. Supporte le basculement entre API Completions et Responses. |
-| **Compatible Anthropic** | Tout endpoint au format API Anthropic | URL de base personnalisée + clé |
+Plusieurs profils peuvent être enregistrés et attribués séparément au design, aux revues, aux tâches rapides et aux images. Les profils qui partagent une connexion réutilisent le même secret, conservé de manière sécurisée.
 
-Pas de backend, pas d'abonnement — votre clé communique directement avec le fournisseur.
+## Fournisseurs
 
-## Fonctionnalités
+OpenPencil prend en charge les connexions compatibles avec OpenAI et Anthropic, ainsi qu’OpenRouter, Google, Z.ai et des fournisseurs locaux.
 
-L'assistant dispose de plus de 90 outils répartis dans ces catégories :
+Aucun serveur intermédiaire n’est utilisé. Les requêtes sont envoyées directement au fournisseur ; dans le navigateur, ses règles CORS s’appliquent. La fiabilité des appels d’outils en diffusion continue peut varier selon les déploiements. Consultez la [compatibilité BYOK](/programmable/byok-provider-compatibility).
 
-- **Créer** — frames, formes, texte, composants, pages. Rendu JSX pour les mises en page complexes.
-- **Styliser** — remplissages, contours, effets, opacité, rayon d'arrondi, modes de fusion.
-- **Mise en page** — auto-layout, grille, alignement, espacement, dimensionnement.
-- **Composants** — créer des composants, des instances, des ensembles de composants. Gérer les surcharges.
-- **Variables** — créer/modifier des variables, des collections, des modes. Lier aux remplissages.
-- **Requêter** — trouver des nœuds, sélecteurs XPath, lire des propriétés, lister les pages, les polices, la sélection.
-- **Inspecter** — `get_jsx` pour la vue JSX, `diff_jsx` pour les différences structurelles, `describe` pour le rôle sémantique et les problèmes de design.
-- **Analyser** — palette de couleurs, audit typographique, cohérence de l'espacement, détection de motifs récurrents.
-- **Exporter** — PNG, SVG, JSX avec classes Tailwind. Vérification visuelle via `export_image`.
-- **Vectoriel** — opérations booléennes, manipulation de chemins.
+## Agents ACP et MCP distant
+
+L’application de bureau peut lancer des agents ACP et les connecter à des serveurs distants de confiance compatibles avec [Model Context Protocol](https://modelcontextprotocol.io/). Dans **Réglages → Connexions MCP**, ajoutez un point d’accès HTTP diffusé, un nom et, si nécessaire, un jeton Bearer.
+
+Le jeton est conservé dans le stockage sécurisé des identifiants, pas dans les réglages ordinaires, et n’est récupéré qu’au démarrage de la session ACP.
+
+## Outils
+
+Les outils couvrent lecture, création, modification, structure, variables, vecteurs, analyse, description, génération de code et images de stock. L’inspection comprend `get_jsx` pour la vue JSX aller-retour, `diff_nodes` pour les différences structurelles, `diff_pixels` pour les différences de pixels et `describe` pour le rôle sémantique et la détection des problèmes de design. Chaque appel agit sur l’éditeur actif et participe à l’historique d’annulation lorsque cela s’applique.
+
+## Compétences
+
+Les compétences sont des dossiers contenant un `SKILL.md` au format [Agent Skills](https://agentskills.io/specification) : des instructions pour un type de travail, avec des fichiers de référence facultatifs. L’IA intégrée voit le nom et la description de chaque compétence active et charge ses instructions quand une demande correspond ; les scripts d’une compétence ne s’exécutent pas.
+
+Dans **Réglages → Compétences**, importez une compétence sous forme de ZIP de son dossier ou de `SKILL.md`. Dans l’application de bureau, `~/.agents/skills` et `~/.claude/skills` sont aussi lus, ainsi que les dossiers `.agents/skills` et `.claude/skills` à côté du document ouvert, utilisés seulement après **Faire confiance au dossier**. Tapez `/` au début d’un message pour choisir une compétence, et `@` pour mentionner un calque, une page ou une compétence. Les mentions s’affichent sous forme de puces, y compris dans les réponses ; un clic montre le calque sur le canevas.
 
 ## Vérification visuelle
 
-L'assistant peut vérifier visuellement son travail. Après avoir créé ou modifié des designs, il utilise `export_image` pour capturer une image et vérifier le résultat par rapport à la demande initiale.
-
-## Exemples de prompts
-
-- « Créer une carte avec un titre, une description et un bouton bleu »
-- « Faire en sorte que tous les boutons de cette page utilisent le même rayon d'arrondi »
-- « Quelles polices sont utilisées dans ce fichier ? »
-- « Changer l'arrière-plan du frame sélectionné en un dégradé du bleu au violet »
-- « Exporter le frame sélectionné en SVG »
-- « Montre-moi le JSX de ce frame »
+L’assistant peut vérifier visuellement son travail. Lorsque `export_image` est activé, il peut capturer une image après avoir créé ou modifié des designs et comparer le résultat à la demande initiale. Cela permet de repérer les problèmes de disposition, les éléments manquants et les écarts de couleur qu’une réponse purement textuelle laisserait passer. `diff_pixels`, activé par défaut, compare un objet modifié à une copie de référence et renvoie les pixels et la zone modifiés ; l’assistant peut ainsi confirmer qu’une modification est restée dans sa cible.
 
 ## Conseils
 
-- Sélectionnez des nœuds avant de poser votre question — l'assistant sait ce qui est sélectionné.
-- Soyez précis sur les couleurs, tailles et positions pour des résultats exacts.
-- L'assistant peut modifier plusieurs nœuds en un seul message.
-- Utilisez « annuler » dans l'éditeur — les mutations IA supportent l'annulation complète.
-- Tous les layouts sont recalculés automatiquement après chaque exécution d'outil.
+- Vous pouvez consulter d’autres pages pendant qu’une réponse est générée : l’assistant continue de travailler sur la page où le message a été envoyé, et ses aperçus s’affichent à votre retour. Pendant votre absence, le chat indique la page sur laquelle il travaille, avec **Aller à la page** pour y revenir. Si l’assistant change lui-même de page, votre vue le suit.
+
+## Confidentialité et coût
+
+Les requêtes sont envoyées au fournisseur configuré. Vérifiez ses conditions, sa politique de données et ses tarifs avant d’envoyer des documents sensibles. OpenPencil ne fournit pas de crédits de modèles.

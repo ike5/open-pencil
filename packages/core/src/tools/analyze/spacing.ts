@@ -1,12 +1,25 @@
-import { defineTool } from '#core/tools/schema'
+import { orderBy } from 'es-toolkit/array'
+import * as v from 'valibot'
+
+import { graphOf } from '#core/figma-api/graph'
+import { toolNumber, defineTool } from '#core/tools/schema'
 
 export const analyzeSpacing = defineTool({
   name: 'analyze_spacing',
   description:
     'Analyze spacing values (gap, padding) across the current page. Checks grid compliance.',
-  params: {
-    grid: { type: 'number', description: 'Base grid size to check against (default: 8)' }
-  },
+  execution: { kind: 'sync', mutation: 'none' },
+  input: v.strictObject({
+    grid: v.optional(
+      toolNumber(
+        v.pipe(
+          v.number(),
+          v.gtValue(0),
+          v.description('Base grid size to check against (default: 8)')
+        )
+      )
+    )
+  }),
   execute: (figma, args) => {
     const gridSize = args.grid ?? 8
     const page = figma.currentPage
@@ -16,7 +29,7 @@ export const analyzeSpacing = defineTool({
 
     page.findAll((node) => {
       totalNodes++
-      const raw = figma.graph.getNode(node.id)
+      const raw = graphOf(figma).getNode(node.id)
       if (!raw) return false
 
       if (raw.layoutMode !== 'NONE' && raw.itemSpacing > 0) {
@@ -36,13 +49,13 @@ export const analyzeSpacing = defineTool({
       return false
     })
 
-    const gaps = [...gapMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([value, count]) => ({ value, count, onGrid: value % gridSize === 0 }))
+    const gaps = orderBy([...gapMap.entries()], [(entry) => entry[1]], ['desc']).map(
+      ([value, count]) => ({ value, count, onGrid: value % gridSize === 0 })
+    )
 
-    const paddings = [...paddingMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([value, count]) => ({ value, count, onGrid: value % gridSize === 0 }))
+    const paddings = orderBy([...paddingMap.entries()], [(entry) => entry[1]], ['desc']).map(
+      ([value, count]) => ({ value, count, onGrid: value % gridSize === 0 })
+    )
 
     const offGridGaps = gaps.filter((gap) => !gap.onGrid)
     const offGridPaddings = paddings.filter((padding) => !padding.onGrid)

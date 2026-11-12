@@ -1,47 +1,40 @@
 ---
-title: Benutzerdefinierte Editor-Shell
-description: Erstellen Sie Ihre eigene Editor-Shell mit provideEditor, CanvasRoot, Menüs, Panels und Toolbars.
+title: Eigene Editor-Oberfläche
+description: Eine eigene Oberfläche mit provideEditor, CanvasRoot, Menüs, Panels und Toolbars entwickeln.
 ---
 
-# Benutzerdefinierte Editor-Shell
+# Eigene Editor-Oberfläche
 
-Eine typische OpenPencil Vue-App hat drei Schichten:
+Eine OpenPencil-Anwendung mit Vue besteht typischerweise aus drei Schichten:
 
-1. `@open-pencil/core` erstellt den Editor
-2. `@open-pencil/vue` passt ihn in Vue Composables und headless Primitive an
-3. Ihre App rendert die Shell, das Styling und die produkt-spezifische UX
+1. `@open-pencil/core` erstellt den Editor;
+2. `@open-pencil/vue` verbindet ihn mit Vue Composables und Komponenten ohne vorgegebenes Erscheinungsbild;
+3. die Anwendung bestimmt Anordnung, Gestaltung und produktspezifisches Verhalten.
 
-## Warum das wichtig ist
+## Mögliche Anwendungen
 
-Die eingebaute OpenPencil-App ist nur eine mögliche Shell.
+Die fertige OpenPencil-App ist nur eine mögliche Oberfläche. Mit dem SDK können beispielsweise ein in ein anderes Produkt eingebetteter Editor, ein internes Asset tool, ein Template editor, eine Annotation UI oder ein spezialisierter AI-assisted editor entwickelt werden.
 
-Sie können eine völlig andere für einen fokussierten Workflow erstellen: einen eingebetteten Editor innerhalb eines anderen Produkts, ein internes Asset-Tool, einen Template-Editor, eine Annotations-UI oder eine KI-gestützte Bearbeitungsoberfläche mit benutzerdefinierten Steuerelementen.
+## Empfohlene Struktur
 
-Das ist der Hauptgrund, warum das SDK existiert.
+Eine typische Oberfläche:
 
-## Empfohlene Komposition
-
-Eine praktische Shell sieht oft so aus:
-
-- Provider an der Spitze mit `provideEditor()`
-- Canvas in der Mitte
-- Seiten-/Ebenennavigation auf einer Seite
-- Eigenschaften auf der anderen Seite
-- Menüs und Toolbars, gesteuert durch Composables
+- ruft `provideEditor()` weit oben im Komponentenbaum auf;
+- platziert den Canvas in der Mitte;
+- zeigt Pages und Layers in einem Side panel;
+- zeigt Eigenschaften im gegenüberliegenden Panel;
+- steuert Menüs und Toolbars über composables.
 
 ## Beispiel
 
 ```vue
 <script setup lang="ts">
-import { createEditor } from '@open-pencil/core/editor'
-import {
-  provideEditor,
-  CanvasRoot,
-  CanvasSurface,
-  ToolbarRoot,
-  PageListRoot,
-  LayerTreeRoot,
-} from '@open-pencil/vue'
+import { createEditor } from '@open-pencil/core'
+import { provideEditor } from '@open-pencil/vue'
+import { CanvasRoot, CanvasSurface } from '@open-pencil/vue/canvas'
+import { ToolbarRoot } from '@open-pencil/vue/primitives/Toolbar'
+import { PageListRoot } from '@open-pencil/vue/primitives/PageList'
+import { LayerTreeRoot } from '@open-pencil/vue/primitives/LayerTree'
 
 const editor = createEditor({ width: 1440, height: 900 })
 provideEditor(editor)
@@ -63,13 +56,13 @@ provideEditor(editor)
     </ToolbarRoot>
 
     <aside class="border-r">
-      <PageListRoot v-slot="{ pages, currentPageId, switchPage }">
+      <PageListRoot v-slot="{ pages, currentPageId, actions }">
         <nav>
           <button
             v-for="page in pages"
             :key="page.id"
             :data-active="page.id === currentPageId"
-            @click="switchPage(page.id)"
+            @click="actions.switch(page.id)"
           >
             {{ page.name }}
           </button>
@@ -84,19 +77,19 @@ provideEditor(editor)
     </main>
 
     <aside class="border-l">
-      Eigenschafts-Panel hier
+      Properties-Panel
     </aside>
   </div>
 </template>
 ```
 
-## Warum diese Aufteilung funktioniert
+## Zuständigkeiten
 
-- das SDK übernimmt Editor-Integration und wiederverwendbare headless Logik
-- Ihre App übernimmt Layout, Styling und produktspezifische Aktionen
-- Composables können Menüs und Panels ohne zusätzliche Wrapper-Komponenten antreiben
+- Das SDK übernimmt die Integration mit dem Editor und wiederverwendbare, gestaltungsunabhängige Logik.
+- Die Anwendung übernimmt Anordnung, Gestaltung und eigene Aktionen.
+- Composables stellen Menüs und Panels die benötigten Daten bereit, ohne zusätzliche Hüllkomponenten zu erzwingen.
 
-## Verwandte APIs
+## Siehe auch
 
 - [provideEditor](../api/composables/provide-editor)
 - [useCanvas](../api/composables/use-canvas)

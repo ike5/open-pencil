@@ -1,60 +1,58 @@
 ---
 title: Navigations-Panels
-description: Seiten- und Ebenen-Seitenleisten mit PageListRoot, LayerTreeRoot und Auswahlzustand erstellen.
+description: Seiten- und Ebenen-Panels mit PageListRoot, LayerTreeRoot und Auswahlzustand.
 ---
 
 # Navigations-Panels
 
-OpenPencil-Seitenleisten kombinieren gewöhnlich zwei Belange:
+Ein Seiten-Panel enthält häufig eine Seitenliste und den Ebenenbaum. Das Vue SDK stellt für beide Bereiche Komponenten ohne vorgegebenes Erscheinungsbild bereit.
 
-- Seitennavigation
-- Ebenennavigation
-
-Das Vue SDK stellt headless Primitive für beide bereit.
-
-## Seitennavigation
+## Seiten
 
 Verwenden Sie `PageListRoot` oder `usePageList()`.
 
 ```vue
-<PageListRoot v-slot="{ pages, currentPageId, switchPage, addPage }">
-  <div>
-    <button v-for="page in pages" :key="page.id" @click="switchPage(page.id)">
-      {{ page.name }}
-    </button>
-    <button @click="addPage()">Neue Seite</button>
-  </div>
+<PageListRoot v-slot="{ pages, currentPageId, actions }">
+  <button v-for="page in pages" :key="page.id" @click="actions.switch(page.id)">
+    {{ page.name }}
+  </button>
+  <button @click="actions.add()">Neue Seite</button>
 </PageListRoot>
 ```
 
-## Ebenennavigation
+## Ebenen
 
-Verwenden Sie `LayerTreeRoot`, wenn Sie SDK-verwaltete Baumstruktur, aber app-eigene Darstellung möchten.
+Verwenden Sie `LayerTreeRoot`, wenn das SDK Baumstruktur und Verhalten verwalten soll, während die Anwendung Markup und Gestaltung bestimmt.
 
 ```vue
-<LayerTreeRoot v-slot="{ items, selectedIds, select, toggleExpand, getKey, getChildren }">
-  <TreeView
-    :items="items"
-    :selected-ids="selectedIds"
-    :get-key="getKey"
-    :get-children="getChildren"
-    @select="select"
-    @toggle-expand="toggleExpand"
-  />
+<LayerTreeRoot v-slot="{ visibleRows }">
+  <LayerTreeItem
+    v-for="row in visibleRows"
+    :key="row.node.id"
+    v-slot="{ node, isSelected, padLeft, actions }"
+    :node="row.node"
+    :level="row.level"
+    :has-children="row.hasChildren"
+  >
+    <button
+      :data-selected="isSelected"
+      :style="{ paddingLeft: padLeft }"
+      @click="actions.select($event.shiftKey)"
+    >
+      {{ node.name }}
+    </button>
+  </LayerTreeItem>
 </LayerTreeRoot>
 ```
 
-## Praktisches Muster
+## Typische Anordnung
 
-Ein gebräuchliches Layout ist:
+- Seiten oben;
+- Ebenen darunter;
+- Details und direkte Umbenennung in den Zeilenkomponenten.
 
-- Seiten am oberen Rand der Seitenleiste
-- Ebenen darunter
-- Details oder Inline-Umbenennen-Steuerelemente in Ihren Zeilenkomponenten eingebettet
-
-## Verwandte APIs
+## Siehe auch
 
 - [usePageList](../api/composables/use-page-list)
 - [PageListRoot](../api/components/page-list-root)
 - [LayerTreeRoot](../api/components/layer-tree-root)
-- [useSelectionState](../api/composables/use-selection-state)

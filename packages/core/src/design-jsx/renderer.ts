@@ -1,119 +1,79 @@
-import { parseColor } from '#core/color'
-import { fetchIcons } from '#core/icons'
-import { createIconFromPaths } from '#core/icons/render'
-import { computeAllLayouts } from '#core/layout'
-import type { SceneGraph, SceneNode, NodeType } from '#core/scene-graph'
+import { createDesignJSXRenderer, type SVGSource } from '@open-pencil/design-jsx'
+import type { Size } from '@open-pencil/scene-graph/primitives'
 
-import { applySizeOverrides, propsToOverrides } from './props-overrides'
-import { isTreeNode } from './tree'
-import type { TreeNode } from './tree'
+import { defaultIcons, placeIcon, type IconProvider } from '#core/icons'
+import { svgIconPaths } from '#core/icons/artwork'
+import { extractSVGContent, extractSVGContentFromElements } from '#core/icons/svg'
+import type { IconData } from '#core/icons/types'
+import { parseSVGViewBoxValue } from '#core/io/formats/svg/metadata'
+import { layoutAuthoredNodes } from '#core/layout'
+import { markdownText } from '#core/text/markdown'
+import { prepareGraphFonts } from '#core/text/prepare'
+import { computeAccurateBounds } from '#core/vector/curve-math'
 
-const TYPE_MAP: Partial<Record<string, NodeType>> = {
-  frame: 'FRAME',
-  view: 'FRAME',
-  rectangle: 'RECTANGLE',
-  rect: 'RECTANGLE',
-  ellipse: 'ELLIPSE',
-  text: 'TEXT',
-  line: 'LINE',
-  star: 'STAR',
-  polygon: 'POLYGON',
-  vector: 'VECTOR',
-  group: 'GROUP',
-  section: 'SECTION',
-  component: 'COMPONENT'
+/** The set inline SVG artwork is reported in, which no icon provider has. */
+const INLINE_SVG = 'svg'
+
+function stringProp(value: unknown): string | null {
+  return typeof value === 'string' ? value : null
 }
 
-interface RenderOptions {
-  x?: number
-  y?: number
-  parentId?: string
-}
-
-export interface RenderResult {
-  id: string
-  name: string
-  type: NodeType
-  childIds: string[]
-}
-
-export async function renderTree(
-  graph: SceneGraph,
-  tree: TreeNode,
-  options: RenderOptions = {}
-): Promise<RenderResult> {
-  const parentId = options.parentId ?? graph.getPages()[0].id
-
-  const result = await renderNode(graph, tree, parentId)
-
-  if (options.x !== undefined) graph.updateNode(result.id, { x: options.x })
-  if (options.y !== undefined) graph.updateNode(result.id, { y: options.y })
-
-  computeAllLayouts(graph)
-
+/** Inline SVG through the same path pipeline as Iconify icons, placed as SVG import places it. */
+function svgIconData({ body, elements, props }: SVGSource, box: Size): IconData | null {
+  // Children may arrive as parsed SVG elements rather than markup; both use the same shapes.
+  let content = body.trim() ? extractSVGContent(body) : null
+  if (!content?.paths.length) content = extractSVGContentFromElements(elements, props)
+  const space = parseSVGViewBoxValue(stringProp(props.viewBox)) ?? { x: 0, y: 0, ...box }
+  const paths = svgIconPaths(content, space, box, {
+    preserveAspectRatio: stringProp(props.preserveAspectRatio),
+    transform: stringProp(props.transform)
+  })
+  if (paths.length === 0) return null
   return {
-    id: result.id,
-    name: result.name,
-    type: result.type,
-    childIds: result.childIds
+    prefix: INLINE_SVG,
+    name: stringProp(props.name) ?? 'custom',
+    width: box.width,
+    height: box.height,
+    paths
   }
 }
 
-async function renderIconNode(
-  graph: SceneGraph,
-  tree: TreeNode,
-  parentId: string
-): Promise<SceneNode> {
-  const props = tree.props
-  const iconName = props.name as string | undefined
-  if (!iconName) throw new Error('<Icon> requires a name prop (e.g. name="lucide:heart")')
-
-  const size = (props.size as number | undefined) ?? 24
-  const colorHex = (props.color as string | undefined) ?? '#000000'
-  const parsedColor = parseColor(colorHex)
-
-  const icons = await fetchIcons([iconName], size)
-  const icon = icons.get(iconName)
-  if (!icon || icon.paths.length === 0) {
-    throw new Error(`Icon "${iconName}" not found`)
-  }
-
-  const parent = graph.getNode(parentId)
-  const parentLayout = parent?.layoutMode ?? 'NONE'
-  const overrides: Partial<SceneNode> = {}
-  if (props.label) overrides.name = props.label as string
-  const { w, h } = applySizeOverrides(props, overrides, parentLayout)
-  if (typeof w !== 'number') overrides.width = size
-  if (typeof h !== 'number') overrides.height = size
-
-  return createIconFromPaths(graph, icon, iconName, size, parsedColor, parentId, overrides)
+function createRenderer(icons: IconProvider) {
+  return createDesignJSXRenderer<IconData>({
+    async icon(name, size) {
+      const icon = (await icons.icons([name], size)).get(name)
+      return icon && icon.paths.length > 0 ? icon : null
+    },
+    svg: svgIconData,
+    createArtwork: (graph, icon, { parentId, size, color, overrides }) =>
+      placeIcon(graph, parentId, icon, {
+        size,
+        color,
+        overrides,
+        // Inline SVG is artwork, not an icon from a set.
+        identity: icon.prefix !== INLINE_SVG
+      }),
+    prepareFonts: prepareGraphFonts,
+    layout: layoutAuthoredNodes,
+    vectorBounds: computeAccurateBounds,
+    markdown: markdownText
+  })
 }
 
-async function renderNode(graph: SceneGraph, tree: TreeNode, parentId: string): Promise<SceneNode> {
-  if (tree.type === 'icon') return renderIconNode(graph, tree, parentId)
+const renderers = new WeakMap<IconProvider, ReturnType<typeof createRenderer>>()
 
-  const nodeType = TYPE_MAP[tree.type]
-  if (!nodeType) throw new Error(`Unknown element: <${tree.type}>`)
-
-  const parent = graph.getNode(parentId)
-  const parentLayout = parent?.layoutMode ?? 'NONE'
-
-  const isText = nodeType === 'TEXT'
-  const overrides = propsToOverrides(tree.props, isText, parentLayout)
-
-  if (isText) {
-    const textContent = tree.children.filter((c): c is string => typeof c === 'string').join('')
-    if (textContent) overrides.text = textContent
+/**
+ * Design JSX rendering with OpenPencil's SVG conversion and layout, drawing `<Icon>` from
+ * `icons`, such as the `FigmaAPI`'s provider, so a host's own icons render too.
+ */
+export function designJSXRenderer(icons: IconProvider = defaultIcons) {
+  let renderer = renderers.get(icons)
+  if (!renderer) {
+    renderer = createRenderer(icons)
+    renderers.set(icons, renderer)
   }
-
-  const node = graph.createNode(nodeType, parentId, overrides)
-
-  for (const child of tree.children) {
-    if (typeof child === 'string') continue
-    if (isTreeNode(child)) {
-      await renderNode(graph, child, node.id)
-    }
-  }
-
-  return node
+  return renderer
 }
+
+/** Design JSX rendering with Iconify's icons. */
+export const { renderJSX, renderTree, renderRoots } = designJSXRenderer()

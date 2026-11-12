@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 
-import { expectDefined } from '#tests/helpers/assert'
+import { expectDefined } from '@open-pencil/test-support/assert'
+
 import { CanvasHelper } from '#tests/helpers/canvas'
 
 const NODE_COUNT = 200
@@ -11,7 +12,7 @@ test.describe('Zoom and pan', () => {
   test.beforeAll(async ({ browser }) => {
     const page = await browser.newPage()
     helper = new CanvasHelper(page)
-    await page.goto('http://localhost:1420/?test&no-chrome')
+    await page.goto('/?test&no-chrome&no-rulers')
     await helper.waitForInit()
 
     await page.evaluate((count: number) => {
@@ -252,7 +253,7 @@ test.describe('Zoom and pan', () => {
       store.state.panX = 0
       store.state.panY = 0
 
-      const canvas = document.querySelector<HTMLCanvasElement>('[data-test-id="canvas-element"]')
+      const canvas = document.querySelector<HTMLCanvasElement>('[data-ready="1"]')
       if (!canvas) throw new Error('Canvas element not found')
       const wheelStart = performance.now()
       for (let i = 0; i < iterations; i++) {

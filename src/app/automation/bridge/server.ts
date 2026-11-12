@@ -4,31 +4,81 @@
  * Connects to the bridge via WebSocket, receives RPC requests,
  * executes them against the live EditorStore, and sends results back.
  */
-import { AUTOMATION_WS_PORT } from '@open-pencil/core/constants'
-import { randomHex } from '@open-pencil/core/random'
+import * as v from 'valibot'
 
+import { randomHex } from '@open-pencil/scene-graph/random'
+
+import { endAgentSession, readAgentSession } from '@/app/automation/agents'
 import { makeFigmaFromStore } from '@/app/automation/bridge/figma-factory'
+import type { AutomationFiles } from '@/app/automation/bridge/file-handlers'
 import { createAutomationCommandHandlers } from '@/app/automation/bridge/handlers'
+import { isUnknownRecord } from '@/app/automation/bridge/target'
 import type { EditorStore } from '@/app/editor/active-store'
-export function connectAutomation(getStore: () => EditorStore, authToken: string | null = null) {
+
+/**
+ * Requests from the MCP bridge, and its cancellation of one it stopped waiting for; other
+ * message types (such as the register prompt) are ignored.
+ */
+const automationMessageSchema = v.pipe(
+  v.string(),
+  v.parseJson(),
+  v.variant('type', [
+    v.object({
+      type: v.literal('request'),
+      id: v.pipe(v.string(), v.nonEmpty()),
+      command: v.string(),
+      args: v.optional(v.unknown())
+    }),
+    v.object({ type: v.literal('cancel'), id: v.pipe(v.string(), v.nonEmpty()) })
+  ])
+)
+
+/**
+ * The connections each MCP session's calls came over, across bridges: restarting MCP opens a new
+ * bridge while the old socket is still closing, and that close must not end a session the new
+ * connection carries, so a session ends only with its last connection.
+ */
+const sessionSockets = new Map<string, Set<WebSocket>>()
+
+/**
+ * The MCP server's `/files/`, beside the socket the app connects to, where a browser app reads and
+ * writes the paths the file tools name. Each folder is one URL segment, so the URL ends in the
+ * file's own name; a leading separator stays as an empty segment, as in a Windows share's `\\`.
+ */
+export function automationFiles(automationURL: string, token: string): AutomationFiles {
+  const base = new URL(automationURL.replace(/^ws/, 'http'))
+  return {
+    url: (path) => new URL(`/files/${path.split(/[\\/]/).map(encodeURIComponent).join('/')}`, base),
+    headers: { authorization: `Bearer ${token}` }
+  }
+}
+
+export function connectAutomation(
+  getStore: () => EditorStore,
+  authToken: string | null = null,
+  automationURL = __OPENPENCIL_LOCAL_AUTOMATION_URL__
+) {
   const token = authToken ?? randomHex(32)
   let ws: WebSocket | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let intentionalDisconnect = false
 
-  function makeFigma() {
-    return makeFigmaFromStore(getStore())
-  }
+  const { handleRequest: handleAutomationRequest } = createAutomationCommandHandlers(
+    makeFigmaFromStore,
+    automationFiles(automationURL, token)
+  )
 
-  const { handleRequest: handleAutomationRequest } = createAutomationCommandHandlers(makeFigma)
-
-  async function handleRequest(_id: string, command: string, args: unknown): Promise<unknown> {
-    return handleAutomationRequest(getStore(), command, args)
-  }
+  /**
+   * Calls still running, by request id, with the connection each came over. The bridge cancels
+   * one once it stops waiting, and a closed connection cancels its own: no one waits for them.
+   */
+  const running = new Map<string, { controller: AbortController; socket: WebSocket }>()
 
   function connect() {
+    let socket: WebSocket
     try {
-      ws = new WebSocket(`ws://127.0.0.1:${AUTOMATION_WS_PORT}`)
+      socket = new WebSocket(automationURL)
+      ws = socket
     } catch (e) {
       console.error(
         '[Automation] WebSocket constructor failed:',
@@ -38,25 +88,49 @@ export function connectAutomation(getStore: () => EditorStore, authToken: string
       return
     }
 
-    ws.onopen = () => {
+    socket.onopen = () => {
       console.debug('[Automation] WebSocket connected to MCP server')
-      ws?.send(JSON.stringify({ type: 'register', token }))
+      socket.send(JSON.stringify({ type: 'register', token }))
     }
 
-    ws.onmessage = async (event) => {
+    socket.onmessage = async (event) => {
       try {
-        const msg = JSON.parse(event.data) as {
-          type: string
-          id: string
-          command: string
-          args?: unknown
+        const parsed = v.safeParse(automationMessageSchema, event.data)
+        if (!parsed.success) {
+          if (parsed.issues.some((issue) => issue.type === 'parse_json'))
+            console.warn('Failed to parse WebSocket message:', v.summarize(parsed.issues))
+          return
         }
-        if (msg.type !== 'request' || !msg.id) return
+        const msg = parsed.output
+        if (msg.type === 'cancel') {
+          // Only the connection a call came over can cancel it.
+          const call = running.get(msg.id)
+          if (call?.socket === socket) {
+            call.controller.abort(new Error('The MCP call timed out and was cancelled'))
+          }
+          return
+        }
+        const session = isUnknownRecord(msg.args) ? readAgentSession(msg.args.agent) : null
+        if (session) {
+          const sockets = sessionSockets.get(session.session) ?? new Set<WebSocket>()
+          sockets.add(socket)
+          sessionSockets.set(session.session, sockets)
+        }
+        const controller = new AbortController()
+        const call = { controller, socket }
+        running.set(msg.id, call)
         try {
-          const result = await handleRequest(msg.id, msg.command, msg.args)
-          ws?.send(JSON.stringify({ type: 'response', id: msg.id, ...(result as object) }))
+          const result = await handleAutomationRequest(
+            getStore(),
+            msg.command,
+            msg.args,
+            controller.signal
+          )
+          if (socket.readyState !== WebSocket.OPEN) return
+          socket.send(JSON.stringify({ type: 'response', id: msg.id, ...(result as object) }))
         } catch (e) {
-          ws?.send(
+          if (socket.readyState !== WebSocket.OPEN) return
+          socket.send(
             JSON.stringify({
               type: 'response',
               id: msg.id,
@@ -64,22 +138,36 @@ export function connectAutomation(getStore: () => EditorStore, authToken: string
               error: e instanceof Error ? e.message : String(e)
             })
           )
+        } finally {
+          if (running.get(msg.id) === call) running.delete(msg.id)
         }
       } catch (e) {
         console.warn('Failed to parse WebSocket message:', e)
       }
     }
 
-    ws.onclose = (event) => {
-      ws = null
+    socket.onclose = (event) => {
+      if (ws === socket) ws = null
+      for (const call of running.values()) {
+        if (call.socket === socket) {
+          call.controller.abort(new Error('The MCP connection closed before the call finished'))
+        }
+      }
+      // Sessions that reached the app only over this connection cannot any more, so their agents
+      // leave; ones that also came another way, such as over a newer connection, stay.
+      for (const [id, sockets] of sessionSockets) {
+        if (!sockets.delete(socket) || sockets.size > 0) continue
+        sessionSockets.delete(id)
+        endAgentSession(id)
+      }
       if (intentionalDisconnect || event.code === 1000) return
-      console.error('[Automation] WebSocket closed:', `code=${event.code} reason=${event.reason}`)
+      console.warn('[Automation] WebSocket closed:', `code=${event.code} reason=${event.reason}`)
       scheduleReconnect()
     }
 
-    ws.onerror = (event) => {
-      console.error('[Automation] WebSocket error:', event)
-      ws?.close()
+    socket.onerror = (event) => {
+      console.warn('[Automation] WebSocket error:', event)
+      socket.close()
     }
   }
 

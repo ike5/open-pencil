@@ -1,23 +1,33 @@
 import type { FigmaAPI } from '@open-pencil/core/figma-api'
+import { compileScript } from '@open-pencil/core/tools'
 
-import type { EditorStore } from '@/app/editor/active-store'
+import type { AutomationTarget } from '@/app/automation/bridge/target'
+import { automationUndoLabel, executeWithDocumentUndo } from '@/app/automation/execution/editor'
 
-type FigmaFactory = () => FigmaAPI
+type FigmaFactory = (
+  store: AutomationTarget['store'],
+  pageId?: string,
+  signal?: AbortSignal
+) => FigmaAPI
 
 export function createAutomationEvalHandler(makeFigma: FigmaFactory) {
-  return async function handleEval(store: EditorStore, args: unknown): Promise<unknown> {
+  return async function handleEval(
+    target: AutomationTarget,
+    args: unknown,
+    signal?: AbortSignal
+  ): Promise<unknown> {
     const code = (args as { code?: string }).code
     if (!code) throw new Error('Missing "code" in args')
-    const figma = makeFigma()
-    const AsyncFunction = Object.getPrototypeOf(async function () {
-      /* noop */
-    }).constructor
-    const wrappedCode = code.trim().startsWith('return')
-      ? code
-      : `return (async () => { ${code} })()`
-    const fn = new AsyncFunction('figma', wrappedCode)
-    const result = await fn(figma)
-    store.requestRender()
+    const figma = makeFigma(target.store, target.pageId, signal)
+    const run = compileScript(code)
+    const result = await executeWithDocumentUndo(
+      target.store,
+      target.pageId,
+      automationUndoLabel('eval'),
+      () => run(figma),
+      signal
+    )
+    target.store.requestRender()
     return { ok: true, result: result ?? null }
   }
 }

@@ -1,8 +1,20 @@
-import { colorToHex, colorDistance as colorDist } from '#core/color'
-import type { SceneGraph, SceneNode } from '#core/scene-graph'
-import type { Color } from '#core/types'
+import { orderBy, sortBy } from 'es-toolkit/array'
 
-import type { RpcCommand } from './types'
+import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import { colorToHex, colorDistance as colorDist } from '@open-pencil/scene-graph/color'
+import type { Color } from '@open-pencil/scene-graph/primitives'
+import { formatTextLength } from '@open-pencil/scene-graph/text'
+
+import type { ColorUsageEntry } from '#core/tools/analyze/colors'
+import {
+  computeOverlaps,
+  type AnalyzeOverlapsArgs,
+  type AnalyzeOverlapsResult
+} from '#core/tools/analyze/overlaps'
+
+import type { RPCCommand } from './types'
+
+export type { AnalyzeOverlapsArgs, AnalyzeOverlapsResult } from '#core/tools/analyze/overlaps'
 
 // ── analyze colors ──
 
@@ -11,12 +23,7 @@ export interface AnalyzeColorsArgs {
   similar?: boolean
 }
 
-interface ColorInfo {
-  hex: string
-  color: Color
-  count: number
-  variableName: string | null
-}
+type ColorInfo = ColorUsageEntry
 
 interface ColorCluster {
   colors: ColorInfo[]
@@ -27,7 +34,7 @@ interface ColorCluster {
 function clusterColors(colors: ColorInfo[], threshold: number): ColorCluster[] {
   const clusters: ColorCluster[] = []
   const used = new Set<string>()
-  const sorted = [...colors].sort((a, b) => b.count - a.count)
+  const sorted = orderBy(colors, ['count'], ['desc'])
 
   for (const color of sorted) {
     if (used.has(color.hex)) continue
@@ -50,7 +57,7 @@ function clusterColors(colors: ColorInfo[], threshold: number): ColorCluster[] {
     if (cluster.colors.length > 1) clusters.push(cluster)
   }
 
-  return clusters.sort((a, b) => b.colors.length - a.colors.length)
+  return orderBy(clusters, [(cluster) => cluster.colors.length], ['desc'])
 }
 
 function collectColors(graph: SceneGraph): { colors: ColorInfo[]; totalNodes: number } {
@@ -108,7 +115,7 @@ export interface AnalyzeColorsResult {
   clusters: ColorCluster[]
 }
 
-export const analyzeColorsCommand: RpcCommand<AnalyzeColorsArgs, AnalyzeColorsResult> = {
+export const analyzeColorsCommand: RPCCommand<AnalyzeColorsArgs, AnalyzeColorsResult> = {
   name: 'analyze_colors',
   execute: (graph, args) => {
     const { colors, totalNodes } = collectColors(graph)
@@ -118,13 +125,13 @@ export const analyzeColorsCommand: RpcCommand<AnalyzeColorsArgs, AnalyzeColorsRe
           args.threshold ?? 15
         )
       : []
-    return { colors: colors.sort((a, b) => b.count - a.count), totalNodes, clusters }
+    return { colors: orderBy(colors, ['count'], ['desc']), totalNodes, clusters }
   }
 }
 
 // ── analyze typography ──
 
-export interface AnalyzeTypographyArgs {}
+export type AnalyzeTypographyArgs = Record<string, never>
 
 export interface TypographyStyle {
   family: string
@@ -139,7 +146,7 @@ export interface AnalyzeTypographyResult {
   totalTextNodes: number
 }
 
-export const analyzeTypographyCommand: RpcCommand<AnalyzeTypographyArgs, AnalyzeTypographyResult> =
+export const analyzeTypographyCommand: RPCCommand<AnalyzeTypographyArgs, AnalyzeTypographyResult> =
   {
     name: 'analyze_typography',
     execute: (graph) => {
@@ -150,7 +157,7 @@ export const analyzeTypographyCommand: RpcCommand<AnalyzeTypographyArgs, Analyze
         if (node.type !== 'TEXT') continue
         totalTextNodes++
 
-        const lh = node.lineHeight === null ? 'auto' : `${node.lineHeight}px`
+        const lh = node.lineHeight === null ? 'auto' : formatTextLength(node.lineHeight)
         const key = `${node.fontFamily}|${node.fontSize}|${node.fontWeight}|${lh}`
         const existing = styleMap.get(key)
         if (existing) {
@@ -166,7 +173,7 @@ export const analyzeTypographyCommand: RpcCommand<AnalyzeTypographyArgs, Analyze
         }
       }
 
-      return { styles: [...styleMap.values()].sort((a, b) => b.count - a.count), totalTextNodes }
+      return { styles: orderBy([...styleMap.values()], ['count'], ['desc']), totalTextNodes }
     }
   }
 
@@ -183,7 +190,7 @@ export interface AnalyzeSpacingResult {
   totalNodes: number
 }
 
-export const analyzeSpacingCommand: RpcCommand<void, AnalyzeSpacingResult> = {
+export const analyzeSpacingCommand: RPCCommand<void, AnalyzeSpacingResult> = {
   name: 'analyze_spacing',
   execute: (graph) => {
     const gapMap = new Map<number, number>()
@@ -210,9 +217,11 @@ export const analyzeSpacingCommand: RpcCommand<void, AnalyzeSpacingResult> = {
     }
 
     const toValues = (map: Map<number, number>) =>
-      [...map.entries()]
-        .map(([value, count]) => ({ value, count }))
-        .sort((a, b) => b.count - a.count)
+      orderBy(
+        [...map.entries()].map(([value, count]) => ({ value, count })),
+        ['count'],
+        ['desc']
+      )
 
     return { gaps: toValues(gapMap), paddings: toValues(paddingMap), totalNodes }
   }
@@ -250,16 +259,15 @@ function buildSignature(graph: SceneGraph, node: SceneNode): string {
     if (!child) continue
     childTypes.set(child.type, (childTypes.get(child.type) ?? 0) + 1)
   }
-  const childPart = [...childTypes.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([t, c]) => `${t}:${c}`)
+  const childPart = sortBy([...childTypes.entries()], [([type]) => type])
+    .map(([type, count]) => `${type}:${count}`)
     .join(',')
   const w = Math.round(node.width / 10) * 10
   const h = Math.round(node.height / 10) * 10
   return `${node.type}:${w}x${h}|${childPart}`
 }
 
-export const analyzeClustersCommand: RpcCommand<AnalyzeClustersArgs, AnalyzeClustersResult> = {
+export const analyzeClustersCommand: RPCCommand<AnalyzeClustersArgs, AnalyzeClustersResult> = {
   name: 'analyze_clusters',
   execute: (graph, args) => {
     const minSize = args.minSize ?? 30
@@ -287,12 +295,21 @@ export const analyzeClustersCommand: RpcCommand<AnalyzeClustersArgs, AnalyzeClus
       sigMap.set(sig, arr)
     }
 
-    const clusters = [...sigMap.entries()]
-      .filter(([, nodes]) => nodes.length >= minCount)
-      .map(([signature, nodes]) => ({ signature, nodes }))
-      .sort((a, b) => b.nodes.length - a.nodes.length)
-      .slice(0, limit)
+    const clusters = orderBy(
+      [...sigMap.entries()]
+        .filter(([, nodes]) => nodes.length >= minCount)
+        .map(([signature, nodes]) => ({ signature, nodes })),
+      [(cluster) => cluster.nodes.length],
+      ['desc']
+    ).slice(0, limit)
 
     return { clusters, totalNodes }
   }
+}
+
+// ── analyze overlaps ──
+
+export const analyzeOverlapsCommand: RPCCommand<AnalyzeOverlapsArgs, AnalyzeOverlapsResult> = {
+  name: 'analyze_overlaps',
+  execute: (graph, args) => computeOverlaps(graph, args)
 }

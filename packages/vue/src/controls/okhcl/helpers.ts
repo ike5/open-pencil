@@ -1,18 +1,20 @@
 import type { Ref } from 'vue'
 
+import type { Editor } from '@open-pencil/core'
+import { BLACK } from '@open-pencil/core/constants'
+import type { SceneNode } from '@open-pencil/scene-graph'
 import {
   getFillOkHCL,
   getStrokeOkHCL,
   resolveOkHCLForPreview,
   rgbaToOkHCL,
   setNodeFillOkHCL,
-  setNodeStrokeOkHCL
-} from '@open-pencil/core/color'
-import type { OkHCLColor } from '@open-pencil/core/color'
-import type { Editor } from '@open-pencil/core/editor'
-import type { SceneNode } from '@open-pencil/core/scene-graph'
+  setNodeStrokeOkHCL,
+  type OkHCLColor,
+  type OkHCLColorSpace
+} from '@open-pencil/scene-graph/color'
 
-import type { ColorFieldFormat } from '#vue/primitives/ColorPicker/types'
+import type { ColorFieldFormat } from '#vue/controls/color-model/types'
 
 type ColorKind = 'fill' | 'stroke'
 
@@ -28,25 +30,26 @@ export function getStrokeOkHCLColor(node: SceneNode | null, index: number): OkHC
   return node ? (getStrokeOkHCL(node, index)?.color ?? null) : null
 }
 
-function fallbackFillOkHCL(node: SceneNode, index: number) {
+function fallbackFillOkHCL(node: SceneNode, index: number, colorSpace: OkHCLColorSpace) {
   return (
-    getFillOkHCLColor(node, index) ??
-    rgbaToOkHCL(node.fills[index]?.color ?? { r: 0, g: 0, b: 0, a: 1 })
+    getFillOkHCLColor(node, index) ?? rgbaToOkHCL(node.fills[index]?.color ?? BLACK, colorSpace)
   )
 }
 
-function fallbackStrokeOkHCL(node: SceneNode, index: number) {
+function fallbackStrokeOkHCL(node: SceneNode, index: number, colorSpace: OkHCLColorSpace) {
   return (
-    getStrokeOkHCLColor(node, index) ??
-    rgbaToOkHCL(node.strokes[index]?.color ?? { r: 0, g: 0, b: 0, a: 1 })
+    getStrokeOkHCLColor(node, index) ?? rgbaToOkHCL(node.strokes[index]?.color ?? BLACK, colorSpace)
   )
 }
 
 export function createOkHCLActions(editor: Editor) {
+  // Colours are stored in the document's profile, so both directions use it.
+  const colorSpace = () => editor.graph.documentColorSpace
+
   function ensureFillOkHCL(node: SceneNode, index: number) {
     editor.updateNodeWithUndo(
       node.id,
-      setNodeFillOkHCL(node, index, fallbackFillOkHCL(node, index)),
+      setNodeFillOkHCL(node, index, fallbackFillOkHCL(node, index, colorSpace()), colorSpace()),
       'Update fill color model'
     )
   }
@@ -54,25 +57,25 @@ export function createOkHCLActions(editor: Editor) {
   function ensureStrokeOkHCL(node: SceneNode, index: number) {
     editor.updateNodeWithUndo(
       node.id,
-      setNodeStrokeOkHCL(node, index, fallbackStrokeOkHCL(node, index)),
+      setNodeStrokeOkHCL(node, index, fallbackStrokeOkHCL(node, index, colorSpace()), colorSpace()),
       'Update stroke color model'
     )
   }
 
   function updateFillOkHCL(node: SceneNode, index: number, patch: Partial<OkHCLColor>) {
-    const current = fallbackFillOkHCL(node, index)
+    const current = fallbackFillOkHCL(node, index, colorSpace())
     editor.updateNodeWithUndo(
       node.id,
-      setNodeFillOkHCL(node, index, { ...current, ...patch }),
+      setNodeFillOkHCL(node, index, { ...current, ...patch }, colorSpace()),
       'Change fill OkHCL'
     )
   }
 
   function updateStrokeOkHCL(node: SceneNode, index: number, patch: Partial<OkHCLColor>) {
-    const current = fallbackStrokeOkHCL(node, index)
+    const current = fallbackStrokeOkHCL(node, index, colorSpace())
     editor.updateNodeWithUndo(
       node.id,
-      setNodeStrokeOkHCL(node, index, { ...current, ...patch }),
+      setNodeStrokeOkHCL(node, index, { ...current, ...patch }, colorSpace()),
       'Change stroke OkHCL'
     )
   }

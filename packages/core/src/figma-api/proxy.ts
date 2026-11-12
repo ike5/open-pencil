@@ -1,504 +1,359 @@
-import {
-  getFillOkHCL,
-  getStrokeOkHCL,
-  setNodeFillOkHCL,
-  setNodeStrokeOkHCL
-} from '#core/color/okhcl'
-import type { OkHCLColor, OkHCLPayload } from '#core/color/okhcl'
-/* eslint-disable max-lines -- Figma Plugin API proxy; FigmaAPI already in separate file */
-import type {
-  SceneGraph,
-  SceneNode,
-  NodeType,
-  Fill,
-  Stroke,
-  Effect,
-  LayoutMode
-} from '#core/scene-graph'
-import type { Rect } from '#core/types'
+import type { SceneGraph, SceneNode } from '@open-pencil/scene-graph'
+import { attachedConnectors } from '@open-pencil/scene-graph/connectors'
+import type { GroupFitOptions } from '@open-pencil/scene-graph/group-bounds'
+import { createsComponentCycle, recordInstanceOverride } from '@open-pencil/scene-graph/instances'
+import { slotPropertyId } from '@open-pencil/scene-graph/slots'
 
+import type { SkiaRenderer } from '#core/canvas'
+import { assertNodeEditable } from '#core/editor/capabilities'
+
+import { prepareFollowedFieldEdit, fitGroupsAround } from './accessor-utils'
 import { installBasicNodeProxyAccessors } from './accessors/basic'
+import { installComponentNodeAccessors } from './accessors/component'
+import { installConnectorNodeProxyAccessors } from './accessors/connector'
+import { installGuideAccessors } from './accessors/guides'
 import { installLayoutNodeProxyAccessors } from './accessors/layout'
+import { installShapeNodeProxyAccessors } from './accessors/shape'
+import { installStickyNodeProxyAccessors, pluginChildren } from './accessors/sticky'
+import { installStrokeNodeProxyAccessors } from './accessors/strokes'
+import { installStyleReferenceAccessors } from './accessors/styles'
+import { installTextNodeProxyAccessors } from './accessors/text'
+import { installTextRangeMethods } from './accessors/text/ranges'
+import { installVariableModeNodeProxyAccessors } from './accessors/variables'
+import { installVectorNodeProxyAccessors } from './accessors/vector'
 import { installVisualNodeProxyAccessors } from './accessors/visual'
-import type { FigmaFontName } from './fonts'
-import * as PluginData from './plugin-data'
+import { installComponentPropertyAccessors } from './components'
+import { installCSSAccessors } from './css'
+import { installDevStatusAccessors } from './dev-status'
+import { installExportAccessors } from './export/accessors'
+import type { ExportHost } from './export/render'
+import { installGeometryAccessors } from './geometry/accessors'
+import { bindGraph } from './graph'
+import { FigmaNodeMembers } from './members'
+import type { FigmaFrameNode, FigmaInstanceNode } from './node-types'
+import { installInstanceOverrideAccessors } from './overrides'
+import { getPageBackgrounds, setPageBackgrounds } from './page-backgrounds'
+import { parseFigmaPaints, toFigmaPaint, type FigmaPaint } from './paints'
+import { flushPendingComponentSync } from './pending-sync'
+import { installPluginDataMethods } from './plugin-data'
 import { nodeProxyToJSON } from './serialization'
-import { setFirstStrokeAlign, setFirstStrokeWeight, setIndependentStrokeWeight } from './strokes'
+import { installShapeWithTextAccessors } from './shape-with-text'
+import { installSlotAccessors, prepareSlotMove, prepareSlotRemoval } from './slots'
 import * as TextProxy from './text'
+import { containerTransform, setContainerTransform } from './transform'
 import * as Traversal from './traversal'
+import { waitOutsideScript } from './waits'
 
 const MIXED = Symbol('mixed')
 
-export { styleNameToWeight, weightToStyleName, type FigmaFont, type FigmaFontName } from './fonts'
+export type { FigmaFont, FigmaFontName } from './fonts/names'
 
 export const INTERNAL_ID = Symbol('id')
-export const INTERNAL_GRAPH = Symbol('graph')
 export const INTERNAL_API = Symbol('api')
 
-export interface NodeProxyHost {
+/** How a host loads pages as they are visited; see `FigmaAPIOptions`. */
+export interface PageHost {
+  load: (pageId: string) => Promise<void>
+  pageOfNode?: (nodeId: string) => Promise<string | null>
+}
+
+/**
+ * How each API loads a page's layers, a host's hook kept off `figma`, which has only Figma's
+ * members. Without one every page is in memory.
+ */
+const pageHosts = new WeakMap<NodeProxyHost, PageHost>()
+
+export function setPageHost(api: NodeProxyHost, host: PageHost): void {
+  pageHosts.set(api, host)
+}
+
+export function loadPage(api: NodeProxyHost, pageId: string): Promise<void> {
+  const host = pageHosts.get(api)
+  // A page's layers load as the document was saved, which is no part of the script's edit.
+  return host ? waitOutsideScript(api, () => host.load(pageId)) : Promise.resolve()
+}
+
+/** The page holding a layer not loaded yet, which loading that page brings in. */
+export function pageOfNode(api: NodeProxyHost, nodeId: string): Promise<string | null> {
+  const find = pageHosts.get(api)?.pageOfNode
+  return find ? waitOutsideScript(api, () => find(nodeId)) : Promise.resolve(null)
+}
+
+export interface NodeProxyHost extends ExportHost {
   wrapNode(id: string): FigmaNodeProxy
   readonly currentPageId: string
+  /** How groups and booleans refit; booleans size to their result when a renderer is attached. */
+  readonly groupFitOptions: GroupFitOptions
+  /** The renderer that measures geometry, when the host has one. */
+  readonly renderer: SkiaRenderer | null
 }
 
 export { MIXED }
 
-export class FigmaNodeProxy {
-  [INTERNAL_ID]: string;
-  [INTERNAL_GRAPH]: SceneGraph;
+/** Figma refuses a move that would make a component contain itself. */
+function assertNoComponentCycle(
+  graph: SceneGraph,
+  parentId: string,
+  childId: string,
+  method: 'appendChild' | 'insertChild'
+): void {
+  if (createsComponentCycle(graph, childId, parentId))
+    throw new Error(`in ${method}: Cannot move node. Reparenting would create a component cycle`)
+}
+
+export class FigmaNodeProxy extends FigmaNodeMembers {
+  /** Installed by `installGeometryAccessors` on the layers Figma gives it. */
+  declare outlineStroke: () => FigmaNodeProxy | null;
+  [INTERNAL_ID]: string
+  readonly #graph: SceneGraph;
   [INTERNAL_API]: NodeProxyHost
 
-  declare readonly id: string
-  declare readonly type: NodeType
-  declare name: string
-  declare readonly removed: boolean
-  declare x: number
-  declare y: number
-  declare readonly width: number
-  declare readonly height: number
-  declare rotation: number
-  declare resize: (width: number, height: number) => void
-  declare resizeWithoutConstraints: (width: number, height: number) => void
-  declare readonly absoluteTransform: [[number, number, number], [number, number, number]]
-  declare readonly absoluteBoundingBox: Rect
-  declare readonly absoluteRenderBounds: Rect
-
-  declare fills: readonly Fill[]
-  declare strokes: readonly Stroke[]
-  declare effects: readonly Effect[]
-  declare opacity: number
-  declare visible: boolean
-  declare locked: boolean
-  declare blendMode: string
-  declare clipsContent: boolean
-  declare cornerRadius: number | typeof MIXED
-  declare topLeftRadius: number
-  declare topRightRadius: number
-  declare bottomLeftRadius: number
-  declare bottomRightRadius: number
-  declare cornerSmoothing: number
-
-  declare layoutMode: LayoutMode
-  declare layoutDirection: string
-  declare primaryAxisAlignItems: string
-  declare counterAxisAlignItems: string
-  declare itemSpacing: number
-  declare counterAxisSpacing: number
-  declare paddingTop: number
-  declare paddingRight: number
-  declare paddingBottom: number
-  declare paddingLeft: number
-  declare layoutWrap: string
-  declare primaryAxisSizingMode: string
-  declare counterAxisSizingMode: string
-  declare counterAxisAlignContent: string
-  declare itemReverseZIndex: boolean
-  declare strokesIncludedInLayout: boolean
-  declare layoutPositioning: string
-  declare layoutGrow: number
-  declare layoutAlign: string
-  declare layoutSizingHorizontal: string
-  declare layoutSizingVertical: string
-  declare constraints: { horizontal: string; vertical: string }
-  declare minWidth: number | null
-  declare maxWidth: number | null
-  declare minHeight: number | null
-  declare maxHeight: number | null
-
   constructor(id: string, graph: SceneGraph, api: NodeProxyHost) {
+    super()
     this[INTERNAL_ID] = id
-    this[INTERNAL_GRAPH] = graph
+    this.#graph = graph
+    bindGraph(this, graph)
     this[INTERNAL_API] = api
+    const type = graph.getNode(id)?.type
+    const internals = { id: INTERNAL_ID, api: INTERNAL_API }
+    if (type === 'VECTOR') installVectorNodeProxyAccessors(this, internals, MIXED)
+    if (type) installShapeNodeProxyAccessors(this, internals, type)
+    if (type) installComponentNodeAccessors(this, internals, type)
+    if (type) installGuideAccessors(this, internals, type)
+    if (type) installInstanceOverrideAccessors(this, internals, type)
+    if (type) installStyleReferenceAccessors(this, internals, type, id === graph.rootId, MIXED)
+    if (type && id !== graph.rootId) installExportAccessors(this, internals)
+    installCSSAccessors(this, internals)
+    if (type) installGeometryAccessors(this, internals, type)
+    // Figma loads a page's layers on demand in dynamic-page mode and has `loadAsync` on pages
+    // alone, as the editor loads a page's layers when it is first visited.
+    if (type === 'CANVAS')
+      Object.defineProperty(this, 'loadAsync', { value: () => loadPage(api, id) })
+    if (id === graph.rootId)
+      Object.defineProperty(this, 'documentColorProfile', {
+        get: () => (graph.documentColorSpace === 'display-p3' ? 'DISPLAY_P3' : 'SRGB')
+      })
   }
 
-  private _raw(): SceneNode {
-    const n = this[INTERNAL_GRAPH].getNode(this[INTERNAL_ID])
+  #update(changes: Partial<SceneNode>): void {
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    const graph = this.#graph
+    const id = this[INTERNAL_ID]
+    graph.updateNode(id, changes)
+    recordInstanceOverride(graph, id, Object.keys(changes))
+  }
+
+  #raw(): SceneNode {
+    flushPendingComponentSync(this.#graph, this[INTERNAL_ID])
+    const n = this.#graph.getNode(this[INTERNAL_ID])
     if (!n) throw new Error(`Node ${this[INTERNAL_ID]} has been removed`)
     return n
   }
 
-  // --- Stroke details ---
-
-  get strokeWeight(): number {
-    const s = this._raw().strokes
-    return s.length > 0 ? s[0].weight : 0
-  }
-
-  set strokeWeight(v: number) {
-    setFirstStrokeWeight(this[INTERNAL_GRAPH], this._raw(), v)
-  }
-
-  get strokeAlign(): string {
-    const s = this._raw().strokes
-    return s.length > 0 ? s[0].align : 'INSIDE'
-  }
-
-  set strokeAlign(v: string) {
-    setFirstStrokeAlign(this[INTERNAL_GRAPH], this._raw(), v)
-  }
-
-  get dashPattern(): readonly number[] {
-    return Object.freeze([...this._raw().dashPattern])
-  }
-
-  set dashPattern(v: readonly number[]) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { dashPattern: [...v] })
-  }
-
-  get strokeCap(): string {
-    return this._raw().strokeCap
-  }
-
-  set strokeCap(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { strokeCap: v as SceneNode['strokeCap'] })
-  }
-
-  get strokeJoin(): string {
-    return this._raw().strokeJoin
-  }
-
-  set strokeJoin(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { strokeJoin: v as SceneNode['strokeJoin'] })
-  }
-
-  get strokeMiterLimit(): number {
-    return this._raw().strokeMiterLimit
-  }
-
-  set strokeMiterLimit(v: number) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { strokeMiterLimit: v })
-  }
-
-  get strokeTopWeight(): number {
-    return this._raw().borderTopWeight
-  }
-
-  set strokeTopWeight(v: number) {
-    setIndependentStrokeWeight(this[INTERNAL_GRAPH], this[INTERNAL_ID], 'borderTopWeight', v)
-  }
-
-  get strokeBottomWeight(): number {
-    return this._raw().borderBottomWeight
-  }
-
-  set strokeBottomWeight(v: number) {
-    setIndependentStrokeWeight(this[INTERNAL_GRAPH], this[INTERNAL_ID], 'borderBottomWeight', v)
-  }
-
-  get strokeLeftWeight(): number {
-    return this._raw().borderLeftWeight
-  }
-
-  set strokeLeftWeight(v: number) {
-    setIndependentStrokeWeight(this[INTERNAL_GRAPH], this[INTERNAL_ID], 'borderLeftWeight', v)
-  }
-
-  get strokeRightWeight(): number {
-    return this._raw().borderRightWeight
-  }
-
-  set strokeRightWeight(v: number) {
-    setIndependentStrokeWeight(this[INTERNAL_GRAPH], this[INTERNAL_ID], 'borderRightWeight', v)
-  }
-
-  // --- Text ---
-
-  get characters(): string {
-    return this._raw().text
-  }
-
-  set characters(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { text: v })
-  }
-
-  get fontSize(): number {
-    return this._raw().fontSize
-  }
-
-  set fontSize(v: number) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { fontSize: v })
-  }
-
-  get fontName(): FigmaFontName {
-    return TextProxy.getFontName(this._raw())
-  }
-
-  set fontName(v: FigmaFontName) {
-    TextProxy.setFontName(this[INTERNAL_GRAPH], this[INTERNAL_ID], v)
-  }
-
-  get fontWeight(): number {
-    return this._raw().fontWeight
-  }
-
-  set fontWeight(v: number) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { fontWeight: v })
-  }
-
-  get textAlignHorizontal(): string {
-    return this._raw().textAlignHorizontal
-  }
-
-  set textAlignHorizontal(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textAlignHorizontal: v as SceneNode['textAlignHorizontal']
-    })
-  }
-
-  get textDirection(): string {
-    return this._raw().textDirection
-  }
-
-  set textDirection(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textDirection: v as SceneNode['textDirection']
-    })
-  }
-
-  get textAlignVertical(): string {
-    return this._raw().textAlignVertical
-  }
-
-  set textAlignVertical(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textAlignVertical: v as SceneNode['textAlignVertical']
-    })
-  }
-
-  get textAutoResize(): string {
-    return this._raw().textAutoResize
-  }
-
-  set textAutoResize(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textAutoResize: v as SceneNode['textAutoResize']
-    })
-  }
-
-  get letterSpacing(): number {
-    return this._raw().letterSpacing
-  }
-
-  set letterSpacing(v: number) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { letterSpacing: v })
-  }
-
-  get lineHeight(): number | null {
-    return this._raw().lineHeight
-  }
-
-  set lineHeight(v: number | null) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { lineHeight: v })
-  }
-
-  get textCase(): string {
-    return this._raw().textCase
-  }
-
-  set textCase(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { textCase: v as SceneNode['textCase'] })
-  }
-
-  get textDecoration(): string {
-    return this._raw().textDecoration
-  }
-
-  set textDecoration(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textDecoration: v as SceneNode['textDecoration']
-    })
-  }
-
-  get maxLines(): number | null {
-    return this._raw().maxLines
-  }
-
-  set maxLines(v: number | null) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { maxLines: v })
-  }
-
-  get textTruncation(): string {
-    return this._raw().textTruncation
-  }
-
-  set textTruncation(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], {
-      textTruncation: v as SceneNode['textTruncation']
-    })
-  }
-
-  get autoRename(): boolean {
-    return this._raw().autoRename
-  }
-
-  set autoRename(v: boolean) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { autoRename: v })
-  }
-
-  insertCharacters(start: number, characters: string): void {
-    TextProxy.insertCharacters(this[INTERNAL_GRAPH], this._raw(), start, characters)
+  insertCharacters(
+    start: number,
+    characters: string,
+    useStyle: TextProxy.InsertStyleSource = 'BEFORE'
+  ): void {
+    TextProxy.insertCharacters(this.#graph, this.#raw(), start, characters, useStyle)
   }
 
   deleteCharacters(start: number, end: number): void {
-    TextProxy.deleteCharacters(this[INTERNAL_GRAPH], this._raw(), start, end)
+    TextProxy.deleteCharacters(this.#graph, this.#raw(), start, end)
   }
 
   get isMask(): boolean {
-    return this._raw().isMask
+    return this.#raw().isMask
   }
 
   set isMask(v: boolean) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { isMask: v })
+    prepareFollowedFieldEdit(this.#graph, this.#raw(), 'isMask', 'is-mask')
+    this.#update({ isMask: v })
+    // A mask limits what its group spans.
+    fitGroupsAround(this.#graph, this.#raw().parentId, this[INTERNAL_API].groupFitOptions)
   }
 
   get maskType(): string {
-    return this._raw().maskType
+    return this.#raw().maskType
   }
 
   set maskType(v: string) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { maskType: v as SceneNode['maskType'] })
+    prepareFollowedFieldEdit(this.#graph, this.#raw(), 'maskType', 'mask-type')
+    this.#update({ maskType: v as SceneNode['maskType'] })
   }
 
   // --- UI state ---
 
   get expanded(): boolean {
-    return this._raw().expanded
+    return this.#raw().expanded
   }
 
   set expanded(v: boolean) {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], { expanded: v })
+    this.#update({ expanded: v })
   }
 
   // --- Components ---
 
+  get backgrounds(): readonly FigmaPaint[] {
+    // A page draws its background colour's alpha times the paint's opacity, which Figma reads as
+    // the opacity alone.
+    return Object.freeze(
+      getPageBackgrounds(this.#raw()).map((paint) =>
+        toFigmaPaint({ ...paint, opacity: paint.opacity * paint.color.a })
+      )
+    )
+  }
+
+  set backgrounds(value: readonly FigmaPaint[]) {
+    const fills = parseFigmaPaints(value, 'set_backgrounds', 'backgrounds')
+    setPageBackgrounds(this.#graph, this.#raw(), fills)
+  }
+
+  /** The async form Figma requires in dynamic-page mode; same result as mainComponent. */
+  async getMainComponentAsync(): Promise<FigmaNodeProxy | null> {
+    return this.mainComponent
+  }
+
   get mainComponent(): FigmaNodeProxy | null {
-    const n = this._raw()
+    const n = this.#raw()
     if (!n.componentId) return null
-    const comp = this[INTERNAL_GRAPH].getNode(n.componentId)
+    const comp = this.#graph.getNode(n.componentId)
     if (!comp) return null
     return this[INTERNAL_API].wrapNode(comp.id)
   }
 
-  createInstance(): FigmaNodeProxy {
-    const n = this._raw()
+  createInstance(): FigmaInstanceNode {
+    const n = this.#raw()
     if (n.type !== 'COMPONENT') throw new Error('createInstance() can only be called on components')
     const pageId = this[INTERNAL_API].currentPageId
-    const inst = this[INTERNAL_GRAPH].createInstance(n.id, pageId)
+    const inst = this.#graph.createInstance(n.id, pageId)
     if (!inst) throw new Error('Failed to create instance')
-    return this[INTERNAL_API].wrapNode(inst.id)
+    // `wrapNode` cannot know the node's type; this one just built an instance.
+    return this[INTERNAL_API].wrapNode(inst.id) as FigmaInstanceNode
+  }
+
+  /** Turns this instance into a frame that keeps its current content, like Figma's. */
+  detachInstance(): FigmaFrameNode {
+    const n = this.#raw()
+    if (n.type !== 'INSTANCE') throw new Error('detachInstance() can only be called on instances')
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    this.#graph.detachInstance(n.id)
+    // The node is a frame once detached, which `wrapNode` has no way to tell.
+    return this[INTERNAL_API].wrapNode(n.id) as FigmaFrameNode
+  }
+
+  /** Points this instance at another component, as Figma's swapComponent does. */
+  swapComponent(component: FigmaNodeProxy): void {
+    const n = this.#raw()
+    if (n.type !== 'INSTANCE') throw new Error('swapComponent() can only be called on instances')
+    const target = this.#graph.getNode(component[INTERNAL_ID])
+    if (target?.type !== 'COMPONENT') throw new Error('swapComponent() needs a component')
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    this.#graph.swapInstanceComponent(n.id, target.id)
   }
 
   // --- Tree ---
 
   get parent(): FigmaNodeProxy | null {
-    const n = this._raw()
+    const n = this.#raw()
     if (!n.parentId) return null
     return this[INTERNAL_API].wrapNode(n.parentId)
   }
 
   get children(): FigmaNodeProxy[] {
-    return this[INTERNAL_GRAPH]
-      .getChildren(this[INTERNAL_ID])
-      .map((c) => this[INTERNAL_API].wrapNode(c.id))
+    flushPendingComponentSync(this.#graph, this[INTERNAL_ID])
+    return pluginChildren(this.#graph, this[INTERNAL_ID]).map((c) =>
+      this[INTERNAL_API].wrapNode(c.id)
+    )
   }
 
   appendChild(child: FigmaNodeProxy): void {
-    this[INTERNAL_GRAPH].reparentNode(child[INTERNAL_ID], this[INTERNAL_ID])
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    assertNodeEditable(this.#graph, child[INTERNAL_ID])
+    assertNoComponentCycle(this.#graph, this[INTERNAL_ID], child[INTERNAL_ID], 'appendChild')
+    prepareSlotMove(this.#graph, this[INTERNAL_ID], child[INTERNAL_ID], 'appendChild')
+    this.#reparentAndFit(child[INTERNAL_ID])
+    // A child already here moves to the end, as Figma does; reparenting leaves it in place.
+    const last = this.#raw().childIds.length - 1
+    if (this.#raw().childIds[last] !== child[INTERNAL_ID])
+      this.#graph.insertChildAt(child[INTERNAL_ID], this[INTERNAL_ID], last)
+  }
+
+  /**
+   * Moves a child here as Figma does: it keeps its transform into its container, so its `x`, `y`,
+   * and rotation stay and it moves with its new parent. The groups it left and joined refit.
+   */
+  #reparentAndFit(childId: string): void {
+    const scene = this.#graph
+    const child = scene.getNode(childId)
+    if (!child) return
+    const previousParentId = child.parentId
+    const transform = containerTransform(child, scene)
+    scene.reparentNode(childId, this[INTERNAL_ID])
+    setContainerTransform(scene, child, transform)
+    const options = this[INTERNAL_API].groupFitOptions
+    fitGroupsAround(scene, previousParentId, options)
+    fitGroupsAround(scene, this[INTERNAL_ID], options)
   }
 
   insertChild(index: number, child: FigmaNodeProxy): void {
-    this[INTERNAL_GRAPH].reparentNode(child[INTERNAL_ID], this[INTERNAL_ID])
-    this[INTERNAL_GRAPH].reorderChild(child[INTERNAL_ID], this[INTERNAL_ID], index)
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    assertNodeEditable(this.#graph, child[INTERNAL_ID])
+    assertNoComponentCycle(this.#graph, this[INTERNAL_ID], child[INTERNAL_ID], 'insertChild')
+    prepareSlotMove(this.#graph, this[INTERNAL_ID], child[INTERNAL_ID], 'insertChild')
+    this.#reparentAndFit(child[INTERNAL_ID])
+    this.#graph.insertChildAt(child[INTERNAL_ID], this[INTERNAL_ID], index)
   }
 
   clone(): FigmaNodeProxy {
-    const n = this._raw()
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    const n = this.#raw()
     const parentId = n.parentId ?? this[INTERNAL_API].currentPageId
-    const cloned = this[INTERNAL_GRAPH].cloneTree(this[INTERNAL_ID], parentId)
+    const cloned = this.#graph.cloneTree(this[INTERNAL_ID], parentId)
     if (!cloned) throw new Error(`Failed to clone node ${this[INTERNAL_ID]}`)
+    // A slot's copy is a plain frame: the slot binding belongs to the original alone.
+    if (slotPropertyId(cloned))
+      this.#graph.updateNode(cloned.id, {
+        componentPropertyReferences: cloned.componentPropertyReferences.filter(
+          (reference) => reference.field !== 'SLOT_CONTENT'
+        )
+      })
     return this[INTERNAL_API].wrapNode(cloned.id)
   }
 
   remove(): void {
-    this[INTERNAL_GRAPH].deleteNode(this[INTERNAL_ID])
+    assertNodeEditable(this.#graph, this[INTERNAL_ID])
+    prepareSlotRemoval(this.#graph, this[INTERNAL_ID])
+    const parentId = this.#raw().parentId
+    // Connectors go with a layer they attach to, as Figma removes them.
+    const attached = attachedConnectors(this.#graph, [this[INTERNAL_ID]])
+    this.#graph.deleteNode(this[INTERNAL_ID])
+    for (const connector of attached) this.#graph.deleteNode(connector.id)
+    fitGroupsAround(this.#graph, parentId, this[INTERNAL_API].groupFitOptions)
   }
 
   findAll(callback?: (node: FigmaNodeProxy) => boolean): FigmaNodeProxy[] {
-    return Traversal.findAll(this[INTERNAL_GRAPH], this[INTERNAL_API], this[INTERNAL_ID], callback)
+    return Traversal.findAll(this.#graph, this[INTERNAL_API], this[INTERNAL_ID], callback)
   }
 
   findOne(callback: (node: FigmaNodeProxy) => boolean): FigmaNodeProxy | null {
-    return Traversal.findOne(this[INTERNAL_GRAPH], this[INTERNAL_API], this[INTERNAL_ID], callback)
+    return Traversal.findOne(this.#graph, this[INTERNAL_API], this[INTERNAL_ID], callback)
   }
 
   findChild(callback: (node: FigmaNodeProxy) => boolean): FigmaNodeProxy | null {
-    return Traversal.findChild(
-      this[INTERNAL_GRAPH],
-      this[INTERNAL_API],
-      this[INTERNAL_ID],
-      callback
-    )
+    return Traversal.findChild(this.#graph, this[INTERNAL_API], this[INTERNAL_ID], callback)
   }
 
   findChildren(callback?: (node: FigmaNodeProxy) => boolean): FigmaNodeProxy[] {
-    return Traversal.findChildren(
-      this[INTERNAL_GRAPH],
-      this[INTERNAL_API],
-      this[INTERNAL_ID],
-      callback
-    )
+    return Traversal.findChildren(this.#graph, this[INTERNAL_API], this[INTERNAL_ID], callback)
   }
 
   findAllWithCriteria(criteria: { types?: string[] }): FigmaNodeProxy[] {
     return Traversal.findAllWithCriteria(
-      this[INTERNAL_GRAPH],
+      this.#graph,
       this[INTERNAL_API],
       this[INTERNAL_ID],
       criteria
-    )
-  }
-
-  // --- Plugin data ---
-
-  getPluginData(key: string): string {
-    return PluginData.getPluginData(this._raw(), key)
-  }
-
-  setPluginData(key: string, value: string): void {
-    PluginData.setPluginData(this[INTERNAL_GRAPH], this._raw(), key, value)
-  }
-
-  getPluginDataKeys(): string[] {
-    return PluginData.getPluginDataKeys(this._raw())
-  }
-
-  getSharedPluginData(namespace: string, key: string): string {
-    return PluginData.getSharedPluginData(this._raw(), namespace, key)
-  }
-
-  setSharedPluginData(namespace: string, key: string, value: string): void {
-    PluginData.setSharedPluginData(this[INTERNAL_GRAPH], this._raw(), namespace, key, value)
-  }
-
-  getSharedPluginDataKeys(namespace: string): string[] {
-    return PluginData.getSharedPluginDataKeys(this._raw(), namespace)
-  }
-
-  getFillOkHCL(index = 0): OkHCLPayload | null {
-    return getFillOkHCL(this._raw(), index)
-  }
-
-  setFillOkHCL(color: OkHCLColor, index = 0): void {
-    this[INTERNAL_GRAPH].updateNode(this[INTERNAL_ID], setNodeFillOkHCL(this._raw(), index, color))
-  }
-
-  getStrokeOkHCL(index = 0): OkHCLPayload | null {
-    return getStrokeOkHCL(this._raw(), index)
-  }
-
-  setStrokeOkHCL(color: OkHCLColor, index = 0): void {
-    this[INTERNAL_GRAPH].updateNode(
-      this[INTERNAL_ID],
-      setNodeStrokeOkHCL(this._raw(), index, color)
     )
   }
 
@@ -506,7 +361,7 @@ export class FigmaNodeProxy {
 
   toJSON(maxDepth?: number, currentDepth = 0): Record<string, unknown> {
     return nodeProxyToJSON(
-      this[INTERNAL_GRAPH],
+      this.#graph,
       this[INTERNAL_API],
       this[INTERNAL_ID],
       maxDepth,
@@ -515,7 +370,7 @@ export class FigmaNodeProxy {
   }
 
   toString(): string {
-    const n = this._raw()
+    const n = this.#raw()
     return `[${n.type} "${n.name}" ${n.id}]`
   }
 
@@ -526,18 +381,29 @@ export class FigmaNodeProxy {
 
 installBasicNodeProxyAccessors(FigmaNodeProxy.prototype, {
   id: INTERNAL_ID,
-  graph: INTERNAL_GRAPH,
   api: INTERNAL_API
 })
 
 installVisualNodeProxyAccessors(
   FigmaNodeProxy.prototype,
-  { id: INTERNAL_ID, graph: INTERNAL_GRAPH, api: INTERNAL_API },
+  { id: INTERNAL_ID, api: INTERNAL_API },
   MIXED
 )
 
-installLayoutNodeProxyAccessors(FigmaNodeProxy.prototype, {
+const proxyInternals = {
   id: INTERNAL_ID,
-  graph: INTERNAL_GRAPH,
   api: INTERNAL_API
-})
+}
+
+installStrokeNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installStickyNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installConnectorNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installTextNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals, MIXED)
+installTextRangeMethods(FigmaNodeProxy.prototype, proxyInternals, MIXED)
+installLayoutNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installVariableModeNodeProxyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installPluginDataMethods(FigmaNodeProxy.prototype, proxyInternals)
+installComponentPropertyAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installSlotAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installDevStatusAccessors(FigmaNodeProxy.prototype, proxyInternals)
+installShapeWithTextAccessors(FigmaNodeProxy.prototype, proxyInternals)

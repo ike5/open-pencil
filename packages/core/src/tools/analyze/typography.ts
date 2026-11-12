@@ -1,19 +1,26 @@
+import { orderBy, sortBy } from 'es-toolkit/array'
+import * as v from 'valibot'
+
+import { formatTextLength } from '@open-pencil/scene-graph/text'
+
+import { graphOf } from '#core/figma-api/graph'
 import { defineTool } from '#core/tools/schema'
+
+import { analysisLimitInputSchema } from './schema'
 
 export const analyzeTypography = defineTool({
   name: 'analyze_typography',
   description:
     'Analyze typography usage across the current page. Shows font families, sizes, weights, and their frequencies.',
-  params: {
-    limit: { type: 'number', description: 'Max styles to return (default: 30)' },
-    group_by: {
-      type: 'string',
-      description: 'Group results by a property',
-      enum: ['family', 'size', 'weight']
-    }
-  },
+  execution: { kind: 'sync', mutation: 'none' },
+  input: v.strictObject({
+    limit: analysisLimitInputSchema,
+    group_by: v.optional(
+      v.pipe(v.picklist(['family', 'size', 'weight']), v.description('Group results by a property'))
+    )
+  }),
   execute: (figma, args) => {
-    const limit = args.limit ?? 30
+    const limit = args.limit
     const page = figma.currentPage
     const styleMap = new Map<
       string,
@@ -24,9 +31,9 @@ export const analyzeTypography = defineTool({
     page.findAll((node) => {
       if (node.type !== 'TEXT') return false
       totalTextNodes++
-      const raw = figma.graph.getNode(node.id)
+      const raw = graphOf(figma).getNode(node.id)
       if (!raw) return false
-      const lh = raw.lineHeight === null ? 'auto' : `${raw.lineHeight}`
+      const lh = raw.lineHeight === null ? 'auto' : formatTextLength(raw.lineHeight)
       const key = `${raw.fontFamily}|${raw.fontSize}|${raw.fontWeight}|${lh}`
       const entry = styleMap.get(key)
       if (entry) {
@@ -43,16 +50,16 @@ export const analyzeTypography = defineTool({
       return false
     })
 
-    const styles = [...styleMap.values()].sort((a, b) => b.count - a.count)
+    const styles = orderBy([...styleMap.values()], ['count'], ['desc'])
 
     if (args.group_by === 'family') {
       const byFamily = new Map<string, number>()
       for (const s of styles) byFamily.set(s.family, (byFamily.get(s.family) ?? 0) + s.count)
       return {
         totalTextNodes,
-        groups: [...byFamily.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([family, count]) => ({ family, count }))
+        groups: orderBy([...byFamily.entries()], [(entry) => entry[1]], ['desc']).map(
+          ([family, count]) => ({ family, count })
+        )
       }
     }
 
@@ -61,9 +68,10 @@ export const analyzeTypography = defineTool({
       for (const s of styles) bySize.set(s.size, (bySize.get(s.size) ?? 0) + s.count)
       return {
         totalTextNodes,
-        groups: [...bySize.entries()]
-          .sort((a, b) => a[0] - b[0])
-          .map(([size, count]) => ({ size, count }))
+        groups: sortBy([...bySize.entries()], [(entry) => entry[0]]).map(([size, count]) => ({
+          size,
+          count
+        }))
       }
     }
 
@@ -72,9 +80,9 @@ export const analyzeTypography = defineTool({
       for (const s of styles) byWeight.set(s.weight, (byWeight.get(s.weight) ?? 0) + s.count)
       return {
         totalTextNodes,
-        groups: [...byWeight.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([weight, count]) => ({ weight, count }))
+        groups: orderBy([...byWeight.entries()], [(entry) => entry[1]], ['desc']).map(
+          ([weight, count]) => ({ weight, count })
+        )
       }
     }
 

@@ -1,89 +1,90 @@
 <script setup lang="ts">
-import { ref, computed, watch, onScopeDispose } from 'vue'
+import { tryOnScopeDispose, useObjectUrl } from '@vueuse/core'
+import { computed, onActivated, onDeactivated, ref, shallowRef, watch } from 'vue'
 
-import AppSelect from '@/components/ui/AppSelect.vue'
-import { useIconButtonUI } from '@/components/ui/icon-button'
-import { useSectionUI } from '@/components/ui/section'
+import { useExport } from '@open-pencil/vue/document/export'
+import { useI18n } from '@open-pencil/vue/i18n'
+import { useRetainedActivity } from '@open-pencil/vue/lifecycle/retention'
+
 import { useEditorStore } from '@/app/editor/active-store'
-import { useExport, useI18n } from '@open-pencil/vue'
-
-import type { ExportFormatId } from '@open-pencil/vue'
+import ExportScaleInput from '@/components/properties/ExportScaleInput.vue'
+import AppButton from '@/components/ui/button/AppButton.vue'
+import IconButton from '@/components/ui/button/IconButton.vue'
+import AppCollapsible from '@/components/ui/collapsible/AppCollapsible.vue'
+import PanelItemRow from '@/components/ui/panel/PanelItemRow.vue'
+import PanelSection from '@/components/ui/panel/PanelSection.vue'
+import AppSelect from '@/components/ui/select/AppSelect.vue'
+import { CHECKERBOARD_BACKGROUND } from '@/theme/paint/checkerboard'
 
 const editorStore = useEditorStore()
 const { panels } = useI18n()
-const sectionCls = useSectionUI()
 const {
   activeTarget,
   activeName,
   activeSettings,
-  addSelectionSetting,
-  addPageSetting,
-  removeSelectionSetting,
-  removePageSetting,
-  updateSelectionScale,
-  updatePageScale,
-  updateSelectionFormat,
-  updatePageFormat,
-  formatSupportsScale
+  targetIds,
+  mixed,
+  addSetting,
+  removeSetting,
+  updateScale,
+  updateFormat,
+  formatSupportsScale,
+  formatOptions,
+  scales,
+  clampExportScale
 } = useExport()
 
-const SCALE_OPTIONS = [0.5, 0.75, 1, 1.5, 2, 3, 4].map((s) => ({ value: s, label: `${s}x` }))
-const FORMAT_OPTIONS: { value: ExportFormatId; label: string }[] = [
-  { value: 'png', label: 'PNG' },
-  { value: 'jpg', label: 'JPG' },
-  { value: 'webp', label: 'WEBP' },
-  { value: 'svg', label: 'SVG' },
-  { value: 'fig', label: '.fig' }
-]
-
-const previewUrl = ref<string | null>(null)
+const previewBlob = shallowRef<Blob | null>(null)
+const previewURL = useObjectUrl(previewBlob)
 const showPreview = ref(false)
 const exporting = ref(false)
+const retainedActivity = useRetainedActivity()
+let previewVersion = 0
+
+function clearPreview() {
+  previewVersion++
+  previewBlob.value = null
+}
+
+onDeactivated(clearPreview)
+tryOnScopeDispose(clearPreview)
+onActivated(() => {
+  void updatePreview()
+})
 
 const PREVIEW_WIDTH = 480
-
-function addSetting() {
-  if (activeTarget.value === 'selection') addSelectionSetting()
-  else addPageSetting()
-}
-
-function removeSetting(index: number) {
-  if (activeTarget.value === 'selection') removeSelectionSetting(index)
-  else removePageSetting(index)
-}
-
-function updateScale(index: number, scale: number) {
-  if (activeTarget.value === 'selection') updateSelectionScale(index, scale)
-  else updatePageScale(index, scale)
-}
-
-function updateFormat(index: number, format: ExportFormatId) {
-  if (activeTarget.value === 'selection') updateSelectionFormat(index, format)
-  else updatePageFormat(index, format)
-}
 
 async function doExport() {
   exporting.value = true
   try {
-    if (activeTarget.value === 'selection') {
-      for (const s of activeSettings.value) await editorStore.exportSelection(s.scale, s.format)
-      return
+    const requests = []
+    // Export exactly the rows shown in the panel (activeSettings) for every target,
+    // so a multi-selection exports what the user sees rather than each node's own
+    // (possibly hidden / divergent) settings.
+    for (const id of targetIds.value) {
+      const node = editorStore.graph.getNode(id)
+      if (!node) continue
+      const target =
+        activeTarget.value === 'page'
+          ? ({ scope: 'page', pageId: id } as const)
+          : ({ scope: 'node', nodeId: id } as const)
+      for (const setting of activeSettings.value) {
+        requests.push({ target, formatId: setting.format, options: { scale: setting.scale } })
+      }
     }
-
-    for (const s of activeSettings.value) {
-      await editorStore.exportTarget(
-        { scope: 'page', pageId: editorStore.state.currentPageId },
-        s.format,
-        { scale: s.scale }
-      )
-    }
+    // A single file downloads directly; multiple files bundle into one zip.
+    await editorStore.exportTargets(requests)
   } finally {
     exporting.value = false
   }
 }
 
 async function updatePreview() {
-  if (!showPreview.value) return
+  const version = ++previewVersion
+  if (retainedActivity?.value === false || !showPreview.value) {
+    previewBlob.value = null
+    return
+  }
 
   const ids =
     activeTarget.value === 'selection'
@@ -91,8 +92,7 @@ async function updatePreview() {
       : editorStore.graph.getChildren(editorStore.state.currentPageId).map((n) => n.id)
 
   if (ids.length === 0) {
-    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-    previewUrl.value = null
+    previewBlob.value = null
     return
   }
 
@@ -103,11 +103,8 @@ async function updatePreview() {
   }
   const scale = maxW > 0 ? Math.min(PREVIEW_WIDTH / maxW, 2) : 1
   const data = await editorStore.renderExportImage(ids, scale, 'PNG')
-  if (data) {
-    const prev = previewUrl.value
-    previewUrl.value = URL.createObjectURL(new Blob([data], { type: 'image/png' }))
-    if (prev) URL.revokeObjectURL(prev)
-  }
+  if (version !== previewVersion) return
+  previewBlob.value = data ? new Blob([data], { type: 'image/png' }) : null
 }
 
 const previewKey = computed(
@@ -121,81 +118,80 @@ const previewKey = computed(
 
 watch(() => showPreview.value, updatePreview, { flush: 'post' })
 watch(previewKey, updatePreview, { flush: 'post' })
-
-onScopeDispose(() => {
-  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-})
 </script>
 
 <template>
-  <div data-test-id="export-section" :class="sectionCls.wrapper">
-    <div class="flex items-center justify-between">
-      <label :class="sectionCls.label">{{ panels.export }}</label>
-      <button data-test-id="export-section-add" :class="useIconButtonUI().base" @click="addSetting">
-        +
-      </button>
-    </div>
+  <PanelSection :label="panels.export" :empty="activeSettings.length === 0">
+    <template #actions>
+      <IconButton :label="panels.addExport" @click="addSetting">
+        <icon-lucide-plus class="size-3.5" />
+      </IconButton>
+    </template>
+    <p v-if="mixed" class="text-2xs text-muted">
+      {{ panels.mixed }}
+    </p>
 
-    <div
-      v-for="(setting, i) in activeSettings"
-      :key="`${activeTarget}:${i}`"
-      data-test-id="export-item"
-      :data-test-index="i"
-      class="flex items-center gap-1.5 py-0.5"
+    <PanelItemRow
+      v-for="(setting, index) in activeSettings"
+      :key="`${targetIds.join(',')}:${index}`"
+      data-property="exportSettings"
+      :data-index="index"
     >
-      <AppSelect
-        v-if="formatSupportsScale(setting.format)"
-        :model-value="setting.scale"
-        :options="SCALE_OPTIONS"
-        @update:model-value="updateScale(i, Number($event))"
-      />
+      <div v-if="formatSupportsScale(setting.format)" class="w-24 shrink-0">
+        <ExportScaleInput
+          :model-value="setting.scale"
+          :presets="scales"
+          :clamp="clampExportScale"
+          :label="panels.exportScale"
+          data-property="export-scale"
+          @update:model-value="updateScale(index, $event)"
+        />
+      </div>
       <AppSelect
         :model-value="setting.format"
-        :options="FORMAT_OPTIONS"
-        @update:model-value="updateFormat(i, $event as ExportFormatId)"
+        :options="formatOptions"
+        :label="panels.exportFormat"
+        :ui="{ trigger: 'w-auto flex-1' }"
+        data-property="export-format"
+        @update:model-value="updateFormat(index, $event)"
       />
-      <button :class="useIconButtonUI({ ui: { base: 'shrink-0' } }).base" @click="removeSetting(i)">
-        −
-      </button>
-    </div>
+      <template #rail="{ removeClass }">
+        <IconButton
+          :label="panels.removeExport"
+          :class="[removeClass, 'shrink-0']"
+          @click="removeSetting(index)"
+        >
+          <icon-lucide-minus class="size-3.5" />
+        </IconButton>
+      </template>
+    </PanelItemRow>
 
-    <button
+    <AppButton
       v-if="activeSettings.length > 0"
+      color="primary"
+      variant="solid"
       data-test-id="export-button"
-      class="mt-1.5 w-full cursor-pointer truncate rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-default disabled:opacity-50"
+      class="mt-1.5 w-full"
       :disabled="exporting"
       @click="doExport"
     >
-      {{ panels.export }} {{ activeName }}
-    </button>
+      <span class="truncate">{{ panels.export }} {{ activeName }}</span>
+    </AppButton>
 
-    <button
+    <AppCollapsible
       v-if="activeSettings.length > 0"
+      v-model:open="showPreview"
+      :label="panels.exportPreview"
       data-test-id="export-preview-toggle"
-      class="mt-1 flex w-full cursor-pointer items-center gap-1 rounded border-none bg-transparent px-0 py-1 text-[11px] text-muted hover:text-surface"
-      @click="showPreview = !showPreview"
+      class="mt-1"
+      :ui="{ trigger: 'gap-1 py-1 text-2xs text-muted hover:text-surface', icon: 'size-3' }"
     >
-      <icon-lucide-chevron-down v-if="showPreview" class="size-3" />
-      <icon-lucide-chevron-right v-else class="size-3" />
-      {{ panels.exportPreview }}
-    </button>
-
-    <div v-if="showPreview && previewUrl" class="mt-1 overflow-hidden rounded border border-border">
-      <img
-        :src="previewUrl"
-        class="block w-full"
-        style="
-          image-rendering: auto;
-          background: repeating-conic-gradient(var(--color-checkerboard) 0% 25%, transparent 0% 50%)
-            50% / 16px 16px;
-        "
-      />
-    </div>
-    <div
-      v-else-if="showPreview"
-      class="mt-1 rounded border border-border px-3 py-2 text-[11px] text-muted"
-    >
-      {{ panels.exportRenderingPreview }}
-    </div>
-  </div>
+      <div v-if="previewURL" class="mt-1 overflow-hidden rounded border border-border">
+        <img :src="previewURL" :class="['block w-full', CHECKERBOARD_BACKGROUND]" />
+      </div>
+      <div v-else class="mt-1 rounded border border-border px-3 py-2 text-2xs text-muted">
+        {{ panels.exportRenderingPreview }}
+      </div>
+    </AppCollapsible>
+  </PanelSection>
 </template>

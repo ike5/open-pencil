@@ -1,26 +1,10 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expectDefined } from '@open-pencil/test-support/assert'
 
-import { expectDefined } from '#tests/helpers/assert'
-import { CanvasHelper } from '#tests/helpers/canvas'
-
-let page: Page
-let canvas: CanvasHelper
-
-test.describe.configure({ mode: 'serial' })
-
-test.beforeAll(async ({ browser }) => {
-  page = await browser.newPage()
-  await page.goto('/')
-  canvas = new CanvasHelper(page)
-  await canvas.waitForInit()
-})
-
-test.afterAll(async () => {
-  await page.close()
-})
+import { expect, test, useEditorSetup } from '#tests/e2e/fixtures'
+const editor = useEditorSetup()
 
 function getNodeById(id: string) {
-  return page.evaluate((nodeId) => {
+  return editor.page.evaluate((nodeId) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     const n = store.graph.getNode(nodeId)
@@ -30,7 +14,7 @@ function getNodeById(id: string) {
 }
 
 function getSelectedIds() {
-  return page.evaluate(() => {
+  return editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     return [...store.state.selectedIds]
@@ -38,7 +22,7 @@ function getSelectedIds() {
 }
 
 function getPageChildren() {
-  return page.evaluate(() => {
+  return editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     return store.graph.getChildren(store.state.currentPageId).map((n) => ({
@@ -53,11 +37,11 @@ function getPageChildren() {
 let componentId: string
 
 test('create component from selection (⌘⌥K)', async () => {
-  await canvas.drawRect(100, 100, 120, 80)
-  await canvas.waitForRender()
+  await editor.canvas.drawRect(100, 100, 120, 80)
+  await editor.canvas.waitForRender()
 
-  await page.keyboard.press('Meta+Alt+k')
-  await canvas.waitForRender()
+  await editor.page.keyboard.press('Meta+Alt+k')
+  await editor.canvas.waitForRender()
 
   const ids = await getSelectedIds()
   expect(ids).toHaveLength(1)
@@ -68,17 +52,16 @@ test('create component from selection (⌘⌥K)', async () => {
   componentId = selectedId
 })
 
-test('component shows purple label in design panel', async () => {
-  const header = page.locator('[data-test-id="design-node-header"]')
-  await expect(header).toContainText('COMPONENT')
+test('component shows its type icon in the design panel', async () => {
+  await expect(editor.page.getByRole('img', { name: 'COMPONENT' })).toBeVisible()
 })
 
 test('component visible in layers panel', async () => {
-  const layers = page.locator('[data-node-id]')
+  const layers = editor.page.locator('[data-node-id]')
   const count = await layers.count()
   expect(count).toBeGreaterThan(0)
 
-  const types = await page.evaluate(() => {
+  const types = await editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     return store.graph.getChildren(store.state.currentPageId).map((n) => n.type)
@@ -92,12 +75,12 @@ test('create instance from component (context menu)', async () => {
   expect(comp).toBeTruthy()
 
   // Use store directly to create instance
-  await page.evaluate((compId) => {
+  await editor.page.evaluate((compId) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.createInstanceFromComponent(compId, 300, 100)
   }, expectDefined(comp, 'component').id)
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
   const updated = await getPageChildren()
   const instance = updated.find((c) => c.type === 'INSTANCE')
@@ -112,38 +95,35 @@ test('instance shows INSTANCE type in design panel', async () => {
     'instance node'
   )
 
-  await page.evaluate((id) => {
+  await editor.page.evaluate((id) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.select([id])
   }, instance.id)
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
-  const header = page.locator('[data-test-id="design-node-header"]')
-  await expect(header).toContainText('INSTANCE')
+  await expect(editor.page.getByRole('img', { name: 'INSTANCE' })).toBeVisible()
 })
 
-test('instance has "Go to Main Component" button', async () => {
-  const goToBtn = page.locator('[data-test-id="design-go-to-component"]')
-  await expect(goToBtn).toBeVisible()
+test('instance has "Go to main component" button', async () => {
+  await expect(editor.page.getByRole('button', { name: 'Go to main component' })).toBeVisible()
 })
 
 test('instance has "Detach" button', async () => {
-  const detachBtn = page.locator('[data-test-id="design-detach-instance"]')
-  await expect(detachBtn).toBeVisible()
+  await expect(editor.page.getByRole('button', { name: 'Detach instance' })).toBeVisible()
 })
 
 test('modifying component propagates to instance', async () => {
   // Select the component
-  await page.evaluate((id) => {
+  await editor.page.evaluate((id) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.select([id])
   }, componentId)
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
   // Change component fill
-  await page.evaluate((id) => {
+  await editor.page.evaluate((id) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.updateNodeWithUndo(
@@ -162,7 +142,7 @@ test('modifying component propagates to instance', async () => {
       'Change fill'
     )
   }, componentId)
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
   // Check instance got the same fill
   const children = await getPageChildren()
@@ -170,7 +150,7 @@ test('modifying component propagates to instance', async () => {
     children.find((c) => c.type === 'INSTANCE'),
     'instance node'
   )
-  const instanceNode = await page.evaluate((id) => {
+  const instanceNode = await editor.page.evaluate((id) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     const n = store.graph.getNode(id)
@@ -188,23 +168,23 @@ test('detach instance converts to frame', async () => {
     'instance node'
   )
 
-  await page.evaluate((id) => {
+  await editor.page.evaluate((id) => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.select([id])
   }, instance.id)
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
-  await page.evaluate(() => {
+  await editor.page.evaluate(() => {
     const store = window.openPencil?.getStore?.()
     if (!store) throw new Error('OpenPencil store not initialized')
     store.detachInstance()
   })
-  await canvas.waitForRender()
+  await editor.canvas.waitForRender()
 
   const ids = await getSelectedIds()
   const detached = await getNodeById(expectDefined(ids[0], 'detached selected id'))
   expect(detached?.type).toBe('FRAME')
 
-  canvas.assertNoErrors()
+  editor.canvas.assertNoErrors()
 })

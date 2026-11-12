@@ -1,43 +1,33 @@
+import type { OpenPencilWindowAPI } from './app/browser-bridge'
+import type { TurnstileAPI } from './app/cloud/waitlist/turnstile'
+
 export {}
 
 declare global {
-  interface Uint8ArrayConstructor {
-    fromBase64(base64: string, options?: { alphabet?: 'base64' | 'base64url' }): Uint8Array
-  }
-
-  interface Uint8Array {
-    toBase64(options?: { alphabet?: 'base64' | 'base64url' }): string
-  }
-
-  interface GestureEvent extends UIEvent {
-    scale: number
-    rotation: number
-    clientX: number
-    clientY: number
-  }
-
   interface FilePickerAcceptType {
     description: string
     accept: Record<string, string[]>
   }
 
   interface FilePickerOptions {
+    multiple?: boolean
     types?: FilePickerAcceptType[]
     suggestedName?: string
   }
 
+  interface DataTransferItem {
+    /** File System Access drag support; Chromium only. */
+    getAsFileSystemHandle?(): Promise<FileSystemHandle | null>
+  }
+
   interface Window {
+    openPencil?: OpenPencilWindowAPI
     showOpenFilePicker?(options?: FilePickerOptions): Promise<FileSystemFileHandle[]>
     showSaveFilePicker?(options?: FilePickerOptions): Promise<FileSystemFileHandle>
-    queryLocalFonts?(): Promise<
-      {
-        family: string
-        fullName: string
-        style: string
-        postscriptName: string
-        blob(): Promise<Blob>
-      }[]
-    >
     mockWindowOpen?(url: string): void
+    /** Cloudflare Turnstile, once its script has loaded. */
+    turnstile?: TurnstileAPI
+    /** Defined by the desktop shell; read through `src/app/tauri/capabilities.ts`. */
+    readonly __OPENPENCIL_DESKTOP_CAPABILITIES__?: unknown
   }
 }

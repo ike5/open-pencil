@@ -1,53 +1,51 @@
 ---
 title: useMenuModel
-description: Buduj modele menu aplikacji i kanvasu na podstawie bieżącego stanu edytora.
+description: Modele menu aplikacji i obszaru roboczego zależne od aktualnego state edytora.
 ---
 
 # useMenuModel
 
-`useMenuModel()` buduje wyższopoziomowe struktury menu na bazie poleceń edytora i stanu selekcji.
+`useMenuModel()` tworzy gotowe do wyświetlenia menu na podstawie poleceń edytora i bieżącego selection.
 
-Przydatny, gdy chcesz gotowe do renderowania grupy menu zamiast ręcznego komponowania poleceń.
+Użyj go, jeśli nie chcesz samodzielnie składać menu z pojedynczych poleceń.
 
 ## Użycie
 
 ```ts
-import { useMenuModel } from '@open-pencil/vue'
+import { useMenuModel } from '@open-pencil/vue/editor/menu-model'
 
 const { appMenu, canvasMenu, selectionLabelMenu } = useMenuModel()
 ```
 
-## Podstawowy przykład
+## Przykład
 
 ```ts
 const { canvasMenu } = useMenuModel()
 ```
 
-Renderuj `canvasMenu.value` do swojego komponentu menu kontekstowego.
+Przekaż `canvasMenu.value` do własnego komponentu menu kontekstowego.
 
-## Przykłady praktyczne
+## Menu aplikacji
 
-### Menu górne w stylu aplikacji
+`appMenu` grupuje pozycje w menu:
 
-`appMenu` grupuje wpisy w:
+- Edit;
+- View;
+- Object;
+- Arrange.
 
-- Edycja
-- Widok
-- Obiekt
-- Ułóż
+## Menu kontekstowe
 
-### Menu kontekstowe z przenoszeniem stron
+`canvasMenu` zawiera pozycje zależne od state, na przykład Move to page z listą dostępnych stron.
 
-`canvasMenu` zawiera dynamiczne elementy jak "Przenieś na stronę" na podstawie bieżącej selekcji i dostępnych stron.
+## Etykiety zależne od selection
 
-### Etykiety selekcji
+`selectionLabelMenu` zwraca odpowiednią wersję etykiet:
 
-`selectionLabelMenu` udostępnia kontekstowe etykiety jak:
+- Hide albo Show;
+- Lock albo Unlock.
 
-- `Ukryj` / `Pokaż`
-- `Zablokuj` / `Odblokuj`
-
-## Powiązane API
+## Zobacz też
 
 - [useEditorCommands](./use-editor-commands)
 - [useSelectionState](./use-selection-state)

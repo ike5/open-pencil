@@ -1,27 +1,28 @@
 ---
 title: useCanvas
-description: CanvasKit-gestütztes Rendering an ein Canvas-Element für einen OpenPencil-Editor anbinden.
+description: Den CanvasKit renderer mit einem Canvas element und einem OpenPencil-Editor verbinden.
 ---
 
 # useCanvas
 
-`useCanvas()` verbindet einen Editor mit einem echten `<canvas>`-Element.
+`useCanvas()` verbindet eine Editor-Instanz mit einem `<canvas>` element.
 
-Es übernimmt:
+Das composable übernimmt:
 
-- CanvasKit-Initialisierung
-- Surface-Erstellung
-- Render-Scheduling
-- Größenänderungsbehandlung
-- optionale Lineal-Sichtbarkeit
-- Renderer-Bereitschafts-Callback
+- CanvasKit initialization;
+- Erstellen der Surface;
+- Scheduling von Rendering;
+- Resize handling;
+- optionale Rulers;
+- Callback nach Initialisierung des Renderer.
 
 ## Verwendung
 
 ```ts
 import { ref } from 'vue'
 
-import { useCanvas, useEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -29,13 +30,14 @@ const editor = useEditor()
 useCanvas(canvasRef, editor)
 ```
 
-## Einfaches Beispiel
+## Beispiel
 
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue'
 
-import { useCanvas, useEditor } from '@open-pencil/vue'
+import { useCanvas } from '@open-pencil/vue/canvas/surface'
+import { useEditor } from '@open-pencil/vue'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const editor = useEditor()
@@ -53,9 +55,7 @@ useCanvas(canvasRef, editor, {
 </template>
 ```
 
-## Praktische Beispiele
-
-### Lineale für eine eingebettete Vorschau deaktivieren
+### Rulers in einem eingebetteten Preview ausblenden
 
 ```ts
 useCanvas(canvasRef, editor, {
@@ -63,7 +63,7 @@ useCanvas(canvasRef, editor, {
 })
 ```
 
-### Zeichenpuffer für Screenshots erhalten
+### Drawing buffer für Screenshots erhalten
 
 ```ts
 useCanvas(canvasRef, editor, {
@@ -73,11 +73,11 @@ useCanvas(canvasRef, editor, {
 
 ## Hinweise
 
-- `useCanvas()` ist renderer-seitig und in der Praxis nur im Browser verfügbar
-- es ist für die Live-Canvas-Pipeline verantwortlich, nicht für app-seitige Datei-Flows
-- es sollte in der Regel mit `useCanvasInput()` für die Interaktionsbehandlung kombiniert werden
+- `useCanvas()` integriert den Renderer und ist für Browser environments vorgesehen.
+- Es verwaltet den aktiven Canvas, nicht das Öffnen oder Speichern von Dateien.
+- Für Pointer interactions wird es gewöhnlich mit `useCanvasInput()` kombiniert.
 
-## Verwandte APIs
+## Siehe auch
 
 - [useEditor](./use-editor)
 - [useCanvasInput](./use-canvas-input)

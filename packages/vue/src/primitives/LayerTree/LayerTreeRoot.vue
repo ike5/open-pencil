@@ -1,10 +1,23 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { TreeRoot } from 'reka-ui'
+import { computed, nextTick, onScopeDispose, reactive, ref } from 'vue'
+
+import type { SceneNode } from '@open-pencil/scene-graph'
 
 import { useEditor } from '#vue/editor/context'
-import { provideLayerTree } from '#vue/primitives/LayerTree/context'
-
-import type { LayerNode } from '#vue/primitives/LayerTree/context'
+import { LAYER_OUTLINE_FIELDS, provideLayerTree } from '#vue/primitives/LayerTree/context'
+import type {
+  LayerNode,
+  LayerSelectionMode,
+  LayerTreeVirtualizer
+} from '#vue/primitives/LayerTree/context'
+import {
+  buildLayerTreeModel,
+  layerSelectionForTarget,
+  patchLayerNode,
+  visibleLayerRows
+} from '#vue/primitives/LayerTree/model'
+import { useLayerDrag } from '#vue/primitives/LayerTree/useLayerDrag'
 
 const { indentPerLevel = 16 } = defineProps<{
   indentPerLevel?: number
@@ -19,33 +32,81 @@ const emit = defineEmits<{
 }>()
 
 const editor = useEditor()
+const items = ref<LayerNode[]>([])
+const expanded = ref<string[]>([])
+const treeVersion = ref(0)
+const selectedIds = computed(() => editor.state.selectedIds)
+const focused = ref(false)
+const visibleRows = computed(() => visibleLayerRows(items.value, new Set(expanded.value)))
+let nodesById = new Map<string, LayerNode>()
+let virtualizer: LayerTreeVirtualizer | null = null
+let selectionAnchorId: string | null = null
+let applyingSelection = false
 
-function buildTree(parentId: string): LayerNode[] {
-  const parent = editor.graph.getNode(parentId)
-  if (!parent) return []
-  return parent.childIds
-    .map((cid) => editor.graph.getNode(cid))
-    .filter((n): n is NonNullable<typeof n> => !!n)
-    .map((node) => ({
-      id: node.id,
-      name: node.name,
-      type: node.type,
-      layoutMode: node.layoutMode,
-      visible: node.visible,
-      locked: node.locked,
-      children: node.childIds.length > 0 ? buildTree(node.id) : undefined
-    }))
+function expandNode(id: string) {
+  if (!expanded.value.includes(id)) expanded.value = [...expanded.value, id]
 }
 
-const items = ref(buildTree(editor.state.currentPageId))
-const treeKey = ref(0)
-const expanded = ref<string[]>([])
-const selectedIds = computed(() => editor.state.selectedIds)
+const { draggingId, instruction, instructionTargetId, setupItem } = useLayerDrag(
+  editor,
+  indentPerLevel,
+  expandNode
+)
 
-watch([() => editor.state.sceneVersion, () => editor.state.currentPageId], () => {
-  items.value = buildTree(editor.state.currentPageId)
-  treeKey.value++
-})
+let rebuildPending = false
+let rebuildToken = 0
+
+function rebuildTree() {
+  rebuildPending = false
+  rebuildToken++
+  const model = buildLayerTreeModel(editor.graph, editor.state.currentPageId)
+  items.value = model.items
+  nodesById = model.byId
+  expanded.value = expanded.value.filter((id) => nodesById.has(id))
+  treeVersion.value++
+}
+
+function scheduleTreeRebuild() {
+  if (rebuildPending) return
+  rebuildPending = true
+  const token = ++rebuildToken
+  queueMicrotask(() => {
+    if (!rebuildPending || token !== rebuildToken) return
+    rebuildTree()
+  })
+}
+
+rebuildTree()
+
+const PATCHABLE_NODE_KEYS = new Set<keyof SceneNode>([
+  'name',
+  'type',
+  'layoutMode',
+  'visible',
+  'locked',
+  'variableModes',
+  'isMask',
+  'fills',
+  'strokes',
+  ...LAYER_OUTLINE_FIELDS
+])
+
+function patchTreeNode(id: string, changes: Partial<SceneNode>) {
+  // A layout mode turns a layer's rows between front-most first and flow order.
+  const reordersRows = 'layoutMode' in changes && !!nodesById.get(id)?.children?.length
+  if ('childIds' in changes || 'parentId' in changes || reordersRows) {
+    rebuildTree()
+    return
+  }
+  if (!(Object.keys(changes) as (keyof SceneNode)[]).some((key) => PATCHABLE_NODE_KEYS.has(key))) {
+    return
+  }
+  const target = nodesById.get(id)
+  const source = editor.graph.getNode(id)
+  // The index holds the plain rows; writing through their reactive proxy updates every view of
+  // them, including values a row derives and caches, such as its variable mode tags.
+  if (target && source) patchLayerNode(reactive(target), source)
+}
 
 const rowRefs = new Map<string, HTMLElement>()
 
@@ -54,71 +115,122 @@ function setRowRef(id: string, el: HTMLElement | null) {
   else rowRefs.delete(id)
 }
 
-watch(
-  () => editor.state.selectedIds,
-  (ids) => {
-    const toExpand = new Set(expanded.value)
-    for (const id of ids) {
-      let node = editor.graph.getNode(id)
-      while (node?.parentId && node.parentId !== editor.state.currentPageId) {
-        toExpand.add(node.parentId)
-        node = editor.graph.getNode(node.parentId)
-      }
+function expandSelectionAncestors(ids: readonly string[]) {
+  const next = new Set(expanded.value)
+  for (const id of ids) {
+    let node = editor.graph.getNode(id)
+    while (node?.parentId && node.parentId !== editor.state.currentPageId) {
+      next.add(node.parentId)
+      node = editor.graph.getNode(node.parentId)
     }
-    if (toExpand.size > expanded.value.length) expanded.value = [...toExpand]
-    nextTick(() => {
-      const first = [...ids][0]
-      if (first) rowRefs.get(first)?.scrollIntoView({ block: 'nearest' })
-    })
   }
-)
-
-function syncCanvasScope(nodeId: string) {
-  const node = editor.graph.getNode(nodeId)
-  if (!node) return
-  let parentId = node.parentId
-  while (parentId && parentId !== editor.state.currentPageId) {
-    if (editor.graph.isContainer(parentId)) {
-      editor.enterContainer(parentId)
-      return
-    }
-    const parent = editor.graph.getNode(parentId)
-    parentId = parent?.parentId ?? null
-  }
-  editor.state.enteredContainerId = null
+  if (next.size !== expanded.value.length) expanded.value = [...next]
 }
 
-function select(id: string, additive: boolean) {
-  emit('select', id, additive)
-  if (additive) {
-    editor.select([id], true)
-  } else {
-    editor.select([id])
-    syncCanvasScope(id)
+function scrollToNode(id: string) {
+  void nextTick(() => {
+    const index = visibleRows.value.findIndex((row) => row.node.id === id)
+    if (index !== -1 && virtualizer) {
+      virtualizer.scrollToIndex(index, { align: 'auto' })
+      return
+    }
+    rowRefs.get(id)?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function onSelectionChanged(ids: string[]) {
+  expandSelectionAncestors(ids)
+  if (applyingSelection) return
+  const visibleIds = new Set(visibleRows.value.map((row) => row.node.id))
+  selectionAnchorId = ids.find((id) => visibleIds.has(id)) ?? null
+  if (selectionAnchorId) scrollToNode(selectionAnchorId)
+}
+
+const unsubscribe = [
+  editor.onEditorEvent('graph:replaced', rebuildTree),
+  editor.onEditorEvent('page:changed', rebuildTree),
+  editor.onEditorEvent('node:created', scheduleTreeRebuild),
+  editor.onEditorEvent('node:deleted', scheduleTreeRebuild),
+  editor.onEditorEvent('node:reparented', scheduleTreeRebuild),
+  editor.onEditorEvent('node:reordered', scheduleTreeRebuild),
+  editor.onEditorEvent('node:updated', patchTreeNode),
+  editor.onEditorEvent('selection:changed', onSelectionChanged)
+]
+
+onScopeDispose(() => {
+  for (const stop of unsubscribe) stop()
+})
+
+function select(id: string, selection: boolean | LayerSelectionMode) {
+  const mode = typeof selection === 'boolean' ? { additive: selection, range: false } : selection
+  emit('select', id, mode.additive)
+  const visibleIds = visibleRows.value.map((row) => row.node.id)
+  const next = layerSelectionForTarget(
+    visibleIds,
+    editor.state.selectedIds,
+    selectionAnchorId,
+    id,
+    mode
+  )
+  if (!mode.range) selectionAnchorId = id
+  applyingSelection = true
+  try {
+    // Adding a layer goes through the editor, which drops its selected ancestors and descendants.
+    if (mode.additive && !mode.range) editor.select([id], true)
+    else editor.select([...next])
+  } finally {
+    applyingSelection = false
   }
+  // A layer picked here leaves canvas clicks as a click on it there would, as in Figma.
+  if (!mode.additive && !mode.range) editor.enterContainerOf(id)
+  scrollToNode(id)
 }
 
 function toggleExpand(id: string) {
   emit('toggleExpand', id)
-  const idx = expanded.value.indexOf(id)
-  if (idx !== -1) expanded.value = expanded.value.filter((e) => e !== id)
-  else expanded.value = [...expanded.value, id]
+  const index = expanded.value.indexOf(id)
+  if (index !== -1) expanded.value = expanded.value.filter((expandedId) => expandedId !== id)
+  else expandNode(id)
+}
+
+function getKey(node: LayerNode) {
+  return node.id
+}
+
+function getChildren(node: LayerNode) {
+  return node.children
+}
+
+function setVirtualizer(next: LayerTreeVirtualizer) {
+  virtualizer = next
 }
 
 const actions = {
   select,
-  toggleExpand
+  toggleExpand,
+  setFocused: (value: boolean) => {
+    focused.value = value
+  },
+  setVirtualizer
 }
 
 provideLayerTree({
   editor,
   items,
   expanded,
-  treeKey,
+  visibleRows,
+  treeVersion,
   selectedIds,
+  focused,
   indentPerLevel,
+  draggingId,
+  instruction,
+  instructionTargetId,
+  setupDrag: setupItem,
   select,
   toggleExpand,
+  setFocused: actions.setFocused,
+  setVirtualizer,
   toggleVisibility: (id: string) => {
     emit('toggleVisibility', id)
     editor.toggleNodeVisibility(id)
@@ -136,13 +248,27 @@ provideLayerTree({
 </script>
 
 <template>
-  <slot
+  <TreeRoot
+    v-slot="{ flattenItems }"
+    v-model:expanded="expanded"
+    as="div"
+    class="flex min-h-0 flex-1 flex-col overflow-hidden"
     :items="items"
-    :expanded="expanded"
-    :tree-key="treeKey"
-    :selected-ids="selectedIds"
-    :actions="actions"
-    :get-key="(v: LayerNode) => v.id"
-    :get-children="(v: LayerNode) => v.children"
-  />
+    :get-key="getKey"
+    :get-children="getChildren"
+  >
+    <slot
+      :items="items"
+      :flatten-items="flattenItems"
+      :visible-rows="visibleRows"
+      :expanded="expanded"
+      :tree-version="treeVersion"
+      :selected-ids="selectedIds"
+      :focused="focused"
+      :dragging-id="draggingId"
+      :instruction="instruction"
+      :instruction-target-id="instructionTargetId"
+      :actions="actions"
+    />
+  </TreeRoot>
 </template>

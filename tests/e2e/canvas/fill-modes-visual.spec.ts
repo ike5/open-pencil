@@ -1,0 +1,385 @@
+import { readFile } from 'node:fs/promises'
+
+import type * as FigNodeChange from '@open-pencil/fig/node-change'
+import type { Fill } from '@open-pencil/scene-graph'
+import { shaderPresetKey } from '@open-pencil/scene-graph/shaders'
+import { repoPath } from '@open-pencil/test-support/paths'
+
+import { expect, test, useEditorSetupWithClear } from '#tests/e2e/fixtures'
+import { readScenePixels } from '#tests/helpers/canvas/pixels'
+
+const editor = useEditorSetupWithClear('/?test&no-chrome&no-rulers')
+
+async function expectCanvas(name: string) {
+  editor.canvas.assertNoErrors()
+  const buffer = await editor.canvas.screenshotCanvasRegion()
+  expect(buffer).toMatchSnapshot(`${name}.png`)
+}
+
+test('FIT avatar preserves the full clipboard fixture image', async () => {
+  const bytes = await readFile(repoPath('tests/fixtures/vectorize/pilot_avatar.png'))
+  await editor.page.evaluate(
+    (data) => {
+      const store = window.openPencil?.getStore?.()
+      if (!store) throw new Error('OpenPencil store not initialized')
+      const hash = store.storeImage(new Uint8Array(data))
+      store.graph.createNode('RECTANGLE', store.state.currentPageId, {
+        name: 'Bitmap background',
+        x: 80,
+        y: 80,
+        width: 320,
+        height: 222,
+        cornerRadius: 16,
+        fills: [
+          {
+            type: 'SOLID',
+            color: { r: 241 / 255, g: 245 / 255, b: 249 / 255, a: 1 },
+            visible: true,
+            opacity: 1
+          }
+        ]
+      })
+      store.graph.createNode('RECTANGLE', store.state.currentPageId, {
+        name: 'Pilot avatar · image fill FIT',
+        x: 138,
+        y: 90,
+        width: 204,
+        height: 202,
+        fills: [
+          {
+            type: 'IMAGE',
+            imageHash: hash,
+            imageScaleMode: 'FIT',
+            color: { r: 0, g: 0, b: 0, a: 1 },
+            visible: true,
+            opacity: 1
+          }
+        ]
+      })
+      store.clearSelection()
+      store.requestRender()
+    },
+    [...bytes]
+  )
+  await editor.canvas.waitForRender()
+  await expectCanvas('fit-avatar-clipboard-fixture')
+})
+
+test('gradients and image fill modes', async () => {
+  await editor.page.evaluate(async () => {
+    const figURL = '/@id/@open-pencil/fig/node-change'
+    const { convertFills, nodeChangeToProps }: typeof FigNodeChange = await import(figURL)
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    const pageId = store.state.currentPageId
+
+    const imageCanvas = document.createElement('canvas')
+    imageCanvas.width = 48
+    imageCanvas.height = 32
+    const ctx = imageCanvas.getContext('2d')
+    if (!ctx) throw new Error('Cannot create image fixture canvas')
+    ctx.fillStyle = '#ef4444'
+    ctx.fillRect(0, 0, 24, 16)
+    ctx.fillStyle = '#3b82f6'
+    ctx.fillRect(24, 0, 24, 16)
+    ctx.fillStyle = '#14b8a6'
+    ctx.fillRect(0, 16, 24, 16)
+    ctx.fillStyle = '#facc15'
+    ctx.fillRect(24, 16, 24, 16)
+    ctx.strokeStyle = '#111827'
+    ctx.lineWidth = 3
+    ctx.strokeRect(1.5, 1.5, 45, 29)
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      imageCanvas.toBlob((result) => {
+        if (result) {
+          resolve(result)
+          return
+        }
+        reject(new Error('Failed to encode image fixture'))
+      }, 'image/png')
+    })
+    const imageHash = store.storeImage(new Uint8Array(await blob.arrayBuffer()))
+
+    store.graph.createNode('FRAME', pageId, {
+      name: 'Gradient and Image Backdrop',
+      x: 56,
+      y: 52,
+      width: 700,
+      height: 250,
+      cornerRadius: 22,
+      fills: [
+        { type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.97, a: 1 }, visible: true, opacity: 1 }
+      ]
+    })
+
+    const gradientStops = [
+      { color: { r: 0.23, g: 0.51, b: 0.96, a: 1 }, position: 0 },
+      { color: { r: 0.58, g: 0.27, b: 0.95, a: 1 }, position: 0.55 },
+      { color: { r: 0.08, g: 0.73, b: 0.73, a: 1 }, position: 1 }
+    ]
+    const gradientTypes = [
+      'GRADIENT_LINEAR',
+      'GRADIENT_RADIAL',
+      'GRADIENT_ANGULAR',
+      'GRADIENT_DIAMOND'
+    ] as const
+    for (const [index, type] of gradientTypes.entries()) {
+      store.graph.createNode('RECTANGLE', pageId, {
+        name: `${type} visual`,
+        x: 84 + index * 116,
+        y: 84,
+        width: 92,
+        height: 72,
+        cornerRadius: 16,
+        fills: [
+          {
+            type,
+            color: { r: 0, g: 0, b: 0, a: 1 },
+            visible: true,
+            opacity: 1,
+            gradientStops,
+            gradientTransform: { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 }
+          }
+        ]
+      })
+    }
+
+    store.graph.createNode('RECTANGLE', pageId, {
+      name: 'FIT image with transparent margins',
+      x: 568,
+      y: 84,
+      width: 140,
+      height: 172,
+      fills: [
+        {
+          type: 'IMAGE',
+          color: { r: 0, g: 0, b: 0, a: 1 },
+          visible: true,
+          opacity: 1,
+          imageHash,
+          imageScaleMode: 'FIT'
+        }
+      ]
+    })
+
+    const scaleModes = ['FILL', 'FIT', 'TILE', 'CROP', 'STRETCH'] as const
+    for (const [index, imageScaleMode] of scaleModes.entries()) {
+      store.graph.createNode('RECTANGLE', pageId, {
+        name: `${imageScaleMode} image visual`,
+        x: imageScaleMode === 'STRETCH' ? 660 : 84 + index * 116,
+        y: 184,
+        width: 92,
+        height: 72,
+        cornerRadius: 14,
+        fills:
+          imageScaleMode === 'STRETCH'
+            ? convertFills([
+                {
+                  type: 'IMAGE',
+                  image: { hash: imageHash },
+                  imageScaleMode,
+                  transform: { m00: 2, m01: 0, m02: -0.25, m10: 0, m11: 2, m12: 0.125 }
+                }
+              ])
+            : [
+                {
+                  type: 'IMAGE',
+                  color: { r: 0, g: 0, b: 0, a: 1 },
+                  visible: true,
+                  opacity: 1,
+                  imageHash,
+                  imageScaleMode,
+                  imageTransform:
+                    imageScaleMode === 'CROP'
+                      ? { m00: 0.5, m01: 0, m02: 0.25, m10: 0, m11: 0.5, m12: 0.25 }
+                      : undefined
+                }
+              ],
+        strokes: [
+          {
+            type: 'SOLID',
+            color: { r: 1, g: 1, b: 1, a: 0.9 },
+            weight: 2,
+            visible: true,
+            opacity: 1,
+            align: 'INSIDE'
+          }
+        ]
+      })
+    }
+
+    // Figma tiles by scale and turns Fill, Fit and Tile images; a Tile ignores a crop it kept.
+    const placements: Partial<Fill>[] = [
+      { imageScaleMode: 'TILE', scale: 0.5 },
+      { imageScaleMode: 'TILE', imageRotation: 90 },
+      { imageScaleMode: 'FILL', imageRotation: 90 },
+      {
+        imageScaleMode: 'TILE',
+        imageTransform: { m00: 0.5, m01: 0, m02: 0.25, m10: 0, m11: 0.5, m12: 0.25 }
+      }
+    ]
+    for (const [index, placement] of placements.entries()) {
+      store.graph.createNode('RECTANGLE', pageId, {
+        name: `Image placement ${index}`,
+        x: 84 + index * 116,
+        y: 320,
+        width: 92,
+        height: 72,
+        fills: [
+          {
+            type: 'IMAGE',
+            color: { r: 0, g: 0, b: 0, a: 1 },
+            visible: true,
+            opacity: 1,
+            imageHash,
+            ...placement
+          }
+        ]
+      })
+    }
+
+    for (const [index, rotation] of [90, -90].entries()) {
+      const line = nodeChangeToProps(
+        {
+          type: 'LINE',
+          size: { x: 70, y: 0 },
+          transform: {
+            m00: 0,
+            m01: rotation === 90 ? -1 : 1,
+            m02: 730 + index * 20,
+            m10: rotation === 90 ? 1 : -1,
+            m11: 0,
+            m12: rotation === 90 ? 100 : 170
+          }
+        },
+        []
+      )
+      store.graph.createNode('LINE', pageId, {
+        ...line,
+        strokes: [
+          {
+            type: 'SOLID',
+            color: { r: 0.1, g: 0.2, b: 0.6, a: 1 },
+            weight: 3,
+            align: 'CENTER',
+            opacity: 1,
+            visible: true
+          }
+        ]
+      })
+    }
+    store.clearSelection()
+    store.requestRender()
+  })
+  await editor.canvas.waitForRender()
+  const gradientPixels = await readScenePixels(
+    editor.page,
+    [0, 1, 2, 3].map((index) => ({ x: 130 + index * 116, y: 120 }))
+  )
+  for (const [r, g, b, a] of gradientPixels) {
+    expect(a).toBe(255)
+    expect(Math.min(r, g, b)).toBeLessThan(200)
+  }
+  await editor.canvas.waitForRender()
+  // A line is stroked to its upper side: the one turned down covers 730–733, the one turned up
+  // 747–750.
+  const [cropPixel, ...linePixels] = await readScenePixels(editor.page, [
+    { x: 706, y: 235 },
+    { x: 731, y: 130 },
+    { x: 748, y: 130 }
+  ])
+  expect(cropPixel.slice(0, 3)).toEqual([17, 24, 39])
+  for (const [r, g, b] of linePixels) {
+    expect(Math.abs(r - 26)).toBeLessThanOrEqual(4)
+    expect(Math.abs(g - 51)).toBeLessThanOrEqual(4)
+    expect(Math.abs(b - 153)).toBeLessThanOrEqual(4)
+  }
+  const [turnedFill, keptCrop] = await readScenePixels(editor.page, [
+    { x: 316 + 70, y: 320 + 20 },
+    { x: 432 + 20, y: 320 + 10 }
+  ])
+  // The red top-left quarter turns to the top right, and a kept crop leaves the tile at full size.
+  expect(turnedFill.slice(0, 3)).toEqual([239, 68, 68])
+  expect(keptCrop.slice(0, 3)).toEqual([239, 68, 68])
+  await expectCanvas('gradients-and-image-fill-modes')
+})
+
+test('a shader paint draws its saved frame, and its live frame while one plays', async () => {
+  const square = async (color: string) =>
+    editor.page.evaluate(async (fill) => {
+      const canvas = new OffscreenCanvas(32, 32)
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Cannot create frame fixture canvas')
+      const gradient = context.createLinearGradient(0, 0, 32, 32)
+      gradient.addColorStop(0, fill)
+      gradient.addColorStop(1, '#111827')
+      context.fillStyle = gradient
+      context.fillRect(0, 0, 32, 32)
+      return [...new Uint8Array(await (await canvas.convertToBlob()).arrayBuffer())]
+    }, color)
+  const saved = await square('#f97316')
+  const preset = { components: [{ type: 'Aurora' }] }
+  const presetKey = shaderPresetKey(preset)
+  await editor.page.evaluate(
+    ({ frame, preset, presetKey }) => {
+      const store = window.openPencil?.getStore?.()
+      if (!store) throw new Error('OpenPencil store not initialized')
+      const node = store.graph.createNode('RECTANGLE', store.state.currentPageId, {
+        name: 'Shader',
+        x: 120,
+        y: 120,
+        width: 160,
+        height: 160,
+        cornerRadius: 24,
+        fills: [{ type: 'SOLID', color: { r: 0, g: 0, b: 0, a: 1 }, visible: true, opacity: 1 }]
+      })
+      store.setShaderPaint([node.id], 'fills', 0, preset)
+      const stored = store.graph.getNode(node.id)
+      const paint = stored?.fills[0]
+      if (!stored || !paint?.imageHash) throw new Error('No shader paint')
+      // A frame saved with the document, drawn at the layer's size, so none is drawn again.
+      store.graph.images.set(paint.imageHash, new Uint8Array(frame))
+      const entry = stored.pluginData.find((item) => item.key === 'shader')
+      if (!entry) throw new Error('No shader entry')
+      const value: unknown = JSON.parse(entry.value)
+      if (typeof value !== 'object' || value === null) throw new Error('Unreadable shader entry')
+      const current = { ...value, frame: { width: 160, height: 160, preset: presetKey } }
+      store.graph.updateNode(node.id, {
+        pluginData: stored.pluginData.map((item) =>
+          item === entry ? { ...item, value: JSON.stringify(current) } : item
+        )
+      })
+      store.clearSelection()
+      store.requestRender()
+    },
+    { frame: saved, preset, presetKey }
+  )
+  await editor.canvas.waitForRender()
+  await expectCanvas('shader-saved-frame')
+
+  const live = await square('#22d3ee')
+  await editor.page.evaluate(async (frame) => {
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    const node = [...store.graph.getAllNodes()].find((item) => item.name === 'Shader')
+    const hash = node?.fills[0]?.imageHash
+    if (!node || !hash) throw new Error('No shader paint')
+    const bitmap = await createImageBitmap(new Blob([new Uint8Array(frame)]))
+    for (const renderer of store.canvasRenderers) renderer.setLiveImage(hash, bitmap, [node.id])
+    store.requestRender()
+  }, live)
+  await editor.canvas.waitForRender()
+  await expectCanvas('shader-live-frame')
+
+  await editor.page.evaluate(() => {
+    const store = window.openPencil?.getStore?.()
+    if (!store) throw new Error('OpenPencil store not initialized')
+    const node = [...store.graph.getAllNodes()].find((item) => item.name === 'Shader')
+    const hash = node?.fills[0]?.imageHash
+    if (!node || !hash) throw new Error('No shader paint')
+    for (const renderer of store.canvasRenderers) renderer.setLiveImage(hash, null, [node.id])
+    store.requestRender()
+  })
+  await editor.canvas.waitForRender()
+  await expectCanvas('shader-saved-frame')
+})

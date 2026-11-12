@@ -1,23 +1,21 @@
 ---
 title: useStrokeControls
-description: Хелперы панели обводок для выравнивания, выбора стороны и весов обводки по сторонам.
+description: Настройка расположения и толщины обводки в панели свойств.
 ---
 
 # useStrokeControls
 
-`useStrokeControls()` — компосабл свойства обводки, используемый панелями редактирования обводок.
+`useStrokeControls()` предоставляет панели обводок:
 
-Предоставляет:
-
-- варианты выравнивания обводки
-- пресеты сторон: все, верх, низ, лево, право, кастомные
-- данные обводки по умолчанию
-- хелперы для весов обводки по отдельным сторонам
+- варианты расположения обводки;
+- варианты сторон: все, сверху, снизу, слева, справа или произвольная комбинация;
+- значение новой обводки по умолчанию;
+- функции для изменения толщины на отдельных сторонах.
 
 ## Использование
 
 ```ts
-import { useStrokeControls } from '@open-pencil/vue'
+import { useStrokeControls } from '@open-pencil/vue/controls/stroke'
 
 const strokes = useStrokeControls()
 ```
@@ -30,16 +28,16 @@ const { alignOptions, sideOptions, currentAlign, currentSides, selectSide } = us
 
 ## Практические примеры
 
-### Задать выравнивание обводки
+### Разместить обводку внутри границы объекта
 
 ```ts
-strokes.updateAlign('INSIDE', activeNode)
+strokes.updateAlign('INSIDE')
 ```
 
 ### Ограничить обводку одной стороной
 
 ```ts
-strokes.selectSide('TOP', activeNode)
+strokes.selectSide('TOP')
 ```
 
 ## Связанные API

@@ -1,17 +1,31 @@
 import { computed, ref } from 'vue'
 import type { ComputedRef } from 'vue'
 
-import type { Editor } from '@open-pencil/core/editor'
+import type { Editor } from '@open-pencil/core'
 import type {
   GridTrack,
   LayoutAlign,
   LayoutCounterAlign,
   LayoutSizing,
+  NumericNodeProperty,
+  SceneGraph,
   SceneNode
-} from '@open-pencil/core/scene-graph'
+} from '@open-pencil/scene-graph'
+import {
+  aspectRatioLockEditable,
+  enforcedAspectRatio,
+  layoutSizing,
+  layoutSizingOptions,
+  layoutSizingUpdates,
+  lockedAspectRatioTarget,
+  sizeKeepingAspectRatio,
+  type LayoutSizingAxis
+} from '@open-pencil/scene-graph/layout'
 
+import { useNodePreview } from '#vue/controls/node-preview/use'
+import { usePanelSize } from '#vue/controls/panel-size/use'
+import { useSelectedNodeState } from '#vue/editor/selection-state/nodes'
 import type { useI18n } from '#vue/i18n'
-import { useSceneComputed } from '#vue/internal/scene-computed/use'
 
 export type AlignCell = { primary: LayoutAlign; counter: LayoutCounterAlign }
 
@@ -23,6 +37,7 @@ type LayoutPanelStrings = {
   sizingFill: string
 }
 
+export type LayoutAxis = 'width' | 'height'
 export type SizeLimitProp = 'minWidth' | 'maxWidth' | 'minHeight' | 'maxHeight'
 
 type ValueRef<T> = { readonly value: T }
@@ -55,7 +70,7 @@ export function createLayoutSelectionState(
   editor: Editor,
   panels: ReturnType<typeof useI18n>['panels']
 ) {
-  const node = useSceneComputed<SceneNode | null>(() => editor.getSelectedNode() ?? null)
+  const { node } = useSelectedNodeState(editor)
   const layoutDirection = computed<SceneNode['layoutDirection']>(
     () => node.value?.layoutDirection ?? 'AUTO'
   )
@@ -113,6 +128,7 @@ export function createGridTrackActions(editor: Editor, node: ComputedRef<SceneNo
 
 export function createPaddingActions(editor: Editor, node: ComputedRef<SceneNode | null>) {
   const showIndividualPadding = ref(false)
+  const preview = useNodePreview(editor)
 
   const hasUniformPadding = computed(() => {
     const n = node.value
@@ -132,30 +148,24 @@ export function createPaddingActions(editor: Editor, node: ComputedRef<SceneNode
 
   function setHorizontalPadding(v: number) {
     if (!node.value) return
-    editor.updateNode(node.value.id, { paddingLeft: v, paddingRight: v })
-  }
-
-  function commitHorizontalPadding(_value: number, previous: number) {
-    if (!node.value) return
-    editor.commitNodeUpdate(
-      node.value.id,
-      { paddingLeft: previous, paddingRight: previous } satisfies Partial<SceneNode>,
+    preview.update(
+      [node.value.id],
+      { paddingLeft: v, paddingRight: v },
       'Change horizontal padding'
     )
   }
 
-  function setVerticalPadding(v: number) {
-    if (!node.value) return
-    editor.updateNode(node.value.id, { paddingTop: v, paddingBottom: v })
+  function commitHorizontalPadding(_value: number, _previous: number) {
+    preview.commit()
   }
 
-  function commitVerticalPadding(_value: number, previous: number) {
+  function setVerticalPadding(v: number) {
     if (!node.value) return
-    editor.commitNodeUpdate(
-      node.value.id,
-      { paddingTop: previous, paddingBottom: previous } satisfies Partial<SceneNode>,
-      'Change vertical padding'
-    )
+    preview.update([node.value.id], { paddingTop: v, paddingBottom: v }, 'Change vertical padding')
+  }
+
+  function commitVerticalPadding(_value: number, _previous: number) {
+    preview.commit()
   }
 
   function toggleIndividualPadding() {
@@ -163,6 +173,7 @@ export function createPaddingActions(editor: Editor, node: ComputedRef<SceneNode
   }
 
   return {
+    cancelPaddingPreview: preview.cancel,
     showIndividualPadding,
     hasUniformPadding,
     hasSymmetricPadding,
@@ -174,24 +185,36 @@ export function createPaddingActions(editor: Editor, node: ComputedRef<SceneNode
   }
 }
 
+function sizingAxis(axis: LayoutAxis): LayoutSizingAxis {
+  return axis === 'width' ? 'HORIZONTAL' : 'VERTICAL'
+}
+
+export function axisSizingPatchForNode(
+  graph: SceneGraph,
+  node: SceneNode,
+  axis: LayoutAxis,
+  sizing: LayoutSizing
+): Partial<SceneNode> {
+  return layoutSizingUpdates(graph, node, sizingAxis(axis), sizing)
+}
+
 export function createLayoutActions({
   editor,
-  node,
-  isFlex,
-  isInAutoLayout
+  node
 }: {
   editor: Editor
   node: ComputedRef<SceneNode | null>
-  isFlex: ComputedRef<boolean>
-  isInAutoLayout: ComputedRef<boolean>
 }) {
-  function updateProp(key: string, value: number | string) {
-    if (node.value) editor.updateNode(node.value.id, { [key]: value })
+  const preview = useNodePreview(editor)
+  const panelSize = usePanelSize(editor)
+
+  function updateProp(key: NumericNodeProperty, value: number) {
+    if (node.value) preview.update([node.value.id], { [key]: value }, `Change ${key}`)
   }
 
   function updateSizeLimit(prop: SizeLimitProp, value: number) {
     if (!node.value) return
-    editor.updateNode(node.value.id, { [prop]: value })
+    preview.update([node.value.id], { [prop]: value }, `Change ${prop}`)
   }
 
   function setSizeLimitToCurrent(prop: SizeLimitProp) {
@@ -201,9 +224,8 @@ export function createLayoutActions({
     editor.updateNodeWithUndo(n.id, { [prop]: Math.round(value) }, `Set ${prop}`)
   }
 
-  function commitSizeLimit(prop: SizeLimitProp, _value: number, previous: number) {
-    if (!node.value) return
-    editor.commitNodeUpdate(node.value.id, { [prop]: previous }, `Change ${prop}`)
+  function commitSizeLimit(_prop: SizeLimitProp, _value: number, _previous: number) {
+    preview.commit()
   }
 
   function addSizeLimit(prop: SizeLimitProp) {
@@ -218,34 +240,60 @@ export function createLayoutActions({
     editor.updateNodeWithUndo(node.value.id, { [prop]: null }, `Remove ${prop}`)
   }
 
-  function commitProp(key: string, _value: number | string, previous: number | string) {
-    if (node.value) {
-      editor.commitNodeUpdate(
-        node.value.id,
-        { [key]: previous } as Partial<SceneNode>,
-        `Change ${key}`
-      )
-    }
+  function commitProp(_key: NumericNodeProperty, _value: number, _previous: number) {
+    preview.commit()
   }
 
-  function setWidthSizing(sizing: LayoutSizing) {
-    if (!node.value) return
-    if (isFlex.value) {
-      const key = node.value.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing'
-      updateProp(key, sizing)
-    } else if (isInAutoLayout.value) {
-      updateProp('layoutGrow', sizing === 'FILL' ? 1 : 0)
-    }
+  function setAxisSizing(axis: LayoutAxis, sizing: LayoutSizing) {
+    const n = node.value
+    if (!n) return
+    editor.updateNodeWithUndo(
+      n.id,
+      axisSizingPatchForNode(editor.graph, n, axis, sizing),
+      `Set ${axis} sizing`
+    )
   }
 
-  function setHeightSizing(sizing: LayoutSizing) {
-    if (!node.value) return
-    if (isFlex.value) {
-      const key = node.value.layoutMode === 'VERTICAL' ? 'primaryAxisSizing' : 'counterAxisSizing'
-      updateProp(key, sizing)
-    } else if (isInAutoLayout.value) {
-      updateProp('layoutAlignSelf', sizing === 'FILL' ? 'STRETCH' : 'AUTO')
-    }
+  function fixedAxisPatch(n: SceneNode, axis: LayoutAxis): Partial<SceneNode> {
+    return axisSizingForNode(editor.graph, n, axis) === 'FIXED'
+      ? {}
+      : axisSizingPatchForNode(editor.graph, n, axis, 'FIXED')
+  }
+
+  // A locked layer keeps its ratio as either side is typed, as in Figma.
+  function updateAxisSize(axis: LayoutAxis, value: number) {
+    const n = node.value
+    if (!n) return
+    const ratio = enforcedAspectRatio(n)
+    const size: Partial<Pick<SceneNode, LayoutAxis>> =
+      ratio === null ? { [axis]: value } : sizeKeepingAspectRatio(ratio, axis, value)
+    panelSize.update([n], size, () => {
+      // A layer with nothing inside also leaves Hug or Fill on the axes it sets.
+      const axes: LayoutAxis[] = ratio === null ? [axis] : ['width', 'height']
+      const patch = Object.assign({}, ...axes.map((each) => fixedAxisPatch(n, each)), size)
+      preview.update([n.id], patch, `Change ${axis}`)
+    })
+  }
+
+  function toggleAspectRatioLock() {
+    const n = node.value
+    if (!n || !aspectRatioLockEditable(editor.graph, n)) return
+    const locked = n.targetAspectRatio !== null
+    editor.updateNodeWithUndo(
+      n.id,
+      { targetAspectRatio: locked ? null : lockedAspectRatioTarget(n.width, n.height) },
+      'Toggle aspect ratio lock'
+    )
+  }
+
+  function commitAxisSize(_axis: LayoutAxis, _value: number, _previous: number) {
+    panelSize.commit()
+    preview.commit()
+  }
+
+  function cancelPreview() {
+    panelSize.cancel()
+    preview.cancel()
   }
 
   function setAlignment(primary: LayoutAlign, counter: LayoutCounterAlign) {
@@ -277,6 +325,7 @@ export function createLayoutActions({
   }
 
   return {
+    cancelPreview,
     updateProp,
     updateSizeLimit,
     setSizeLimitToCurrent,
@@ -284,12 +333,34 @@ export function createLayoutActions({
     addSizeLimit,
     removeSizeLimit,
     commitProp,
-    setWidthSizing,
-    setHeightSizing,
+    setAxisSizing,
+    updateAxisSize,
+    commitAxisSize,
+    toggleAspectRatioLock,
     setAlignment,
     setGapAuto,
     setLayoutDirection
   }
+}
+
+export function axisSizingForNode(
+  graph: SceneGraph,
+  node: SceneNode | null,
+  axis: LayoutAxis
+): LayoutSizing {
+  return node ? layoutSizing(graph, node, sizingAxis(axis)) : 'FIXED'
+}
+
+export function sizingOptionsForNode(
+  graph: SceneGraph,
+  node: SceneNode | null,
+  labels: Partial<Record<LayoutSizing, string>> = {}
+): { value: LayoutSizing; label: string }[] {
+  const allowed = node ? layoutSizingOptions(graph, node) : []
+  // A node outside auto-layout still shows its fixed size.
+  const values: LayoutSizing[] = allowed.length > 0 ? allowed : ['FIXED']
+  const fallback: Record<LayoutSizing, string> = { FIXED: 'Fixed', HUG: 'Hug', FILL: 'Fill' }
+  return values.map((value) => ({ value, label: labels[value] ?? fallback[value] }))
 }
 
 export function createLayoutSizingState(
@@ -308,39 +379,29 @@ export function createLayoutSizingState(
   const isFlex = computed(
     () => node.value?.layoutMode === 'HORIZONTAL' || node.value?.layoutMode === 'VERTICAL'
   )
-
-  const widthSizing = computed<LayoutSizing>(() => {
-    const n = node.value
-    if (!n) return 'FIXED'
-    if (isFlex.value)
-      return n.layoutMode === 'HORIZONTAL' ? n.primaryAxisSizing : n.counterAxisSizing
-    if (isInAutoLayout.value && n.layoutGrow > 0) return 'FILL'
-    return 'FIXED'
-  })
-
-  const heightSizing = computed<LayoutSizing>(() => {
-    const n = node.value
-    if (!n) return 'FIXED'
-    if (isFlex.value) return n.layoutMode === 'VERTICAL' ? n.primaryAxisSizing : n.counterAxisSizing
-    if (isInAutoLayout.value && n.layoutAlignSelf === 'STRETCH') return 'FILL'
-    return 'FIXED'
-  })
+  const widthSizing = computed(() => axisSizingForNode(editor.graph, node.value, 'width'))
+  const heightSizing = computed(() => axisSizingForNode(editor.graph, node.value, 'height'))
 
   function sizingOptions() {
-    const options: { value: LayoutSizing; label: string }[] = [
-      { value: 'FIXED', label: panels.value.sizingFixed }
-    ]
-    if (isFlex.value) options.push({ value: 'HUG', label: panels.value.sizingHug })
-    if (isInAutoLayout.value || isFlex.value)
-      options.push({ value: 'FILL', label: panels.value.sizingFill })
-    return options
+    return sizingOptionsForNode(editor.graph, node.value, {
+      FIXED: panels.value.sizingFixed,
+      HUG: panels.value.sizingHug,
+      FILL: panels.value.sizingFill
+    })
   }
 
   const widthSizingOptions = computed(sizingOptions)
   const heightSizingOptions = computed(sizingOptions)
+  const aspectRatioLocked = computed(() => node.value?.targetAspectRatio != null)
+  const aspectRatioLockable = computed(() => {
+    const n = node.value
+    return !!n && aspectRatioLockEditable(editor.graph, n)
+  })
 
   return {
     isInAutoLayout,
+    aspectRatioLocked,
+    aspectRatioLockable,
     isGrid,
     isFlex,
     widthSizing,

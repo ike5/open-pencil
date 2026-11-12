@@ -1,14 +1,9 @@
 import type { Ref } from 'vue'
 
-import { colorToHexRaw, parseColor } from '@open-pencil/core/color'
-import type { Editor } from '@open-pencil/core/editor'
-import { randomHex } from '@open-pencil/core/random'
-import type {
-  Variable,
-  VariableCollection,
-  VariableType,
-  VariableValue
-} from '@open-pencil/core/scene-graph'
+import type { Editor } from '@open-pencil/core'
+import { BLACK } from '@open-pencil/core/constants'
+import type { VariableCollection, VariableType, VariableValue } from '@open-pencil/scene-graph'
+import { randomHex } from '@open-pencil/scene-graph/random'
 
 export function createVariableCollectionActions(editor: Editor, activeCollectionId: Ref<string>) {
   function setActiveCollection(id: string) {
@@ -68,12 +63,6 @@ export function createVariableCollectionActions(editor: Editor, activeCollection
     return editor.duplicateMode(colId, modeId)
   }
 
-  function setActiveMode(modeId: string) {
-    const colId = activeCollectionId.value
-    if (!colId) return
-    editor.setActiveMode(colId, modeId)
-  }
-
   return {
     setActiveCollection,
     addCollection,
@@ -83,8 +72,7 @@ export function createVariableCollectionActions(editor: Editor, activeCollection
     removeMode,
     renameMode,
     setDefaultMode,
-    duplicateMode,
-    setActiveMode
+    duplicateMode
   }
 }
 
@@ -93,7 +81,7 @@ export function createVariableValueActions(
   getActiveCollection: () => VariableCollection | null
 ) {
   function defaultVariableValue(type: VariableType): VariableValue {
-    if (type === 'COLOR') return { r: 0, g: 0, b: 0, a: 1 }
+    if (type === 'COLOR') return { ...BLACK }
     if (type === 'FLOAT') return 0
     if (type === 'BOOLEAN') return false
     return ''
@@ -106,9 +94,10 @@ export function createVariableValueActions(
     return 'New text'
   }
 
-  function addVariable(type: VariableType = 'COLOR') {
+  /** Adds a variable to the active collection and returns its id. */
+  function addVariable(type: VariableType = 'COLOR'): string | undefined {
     const col = getActiveCollection()
-    if (!col) return
+    if (!col) return undefined
 
     const id = `var:${randomHex(8)}`
     const valuesByMode: Record<string, VariableValue> = {}
@@ -125,6 +114,7 @@ export function createVariableValueActions(
       description: '',
       hiddenFromPublishing: false
     })
+    return id
   }
 
   function removeVariable(id: string) {
@@ -139,38 +129,10 @@ export function createVariableValueActions(
     editor.updateVariableValue(id, modeId, value)
   }
 
-  function formatModeValue(variable: Variable, modeId: string): string {
-    const value = variable.valuesByMode[modeId]
-    if (typeof value === 'object' && 'r' in value) return colorToHexRaw(value)
-    if (typeof value === 'object' && 'aliasId' in value) {
-      const aliased = editor.getVariable(value.aliasId)
-      return aliased ? `→ ${aliased.name}` : '→ ?'
-    }
-    return String(value)
-  }
-
-  function parseVariableValue(variable: Variable, raw: string): VariableValue | undefined {
-    if (variable.type === 'COLOR') return parseColor(raw.startsWith('#') ? raw : `#${raw}`)
-    if (variable.type === 'FLOAT') {
-      const num = parseFloat(raw)
-      return isNaN(num) ? undefined : num
-    }
-    if (variable.type === 'BOOLEAN') return raw.toLowerCase() === 'true'
-    return raw
-  }
-
-  function shortName(variable: Variable): string {
-    const parts = variable.name.split('/')
-    return parts[parts.length - 1] ?? variable.name
-  }
-
   return {
     addVariable,
     removeVariable,
     renameVariable,
-    updateVariableValue,
-    formatModeValue,
-    parseVariableValue,
-    shortName
+    updateVariableValue
   }
 }

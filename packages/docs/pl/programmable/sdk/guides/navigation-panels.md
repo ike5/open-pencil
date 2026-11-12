@@ -1,58 +1,64 @@
 ---
 title: Panele nawigacyjne
-description: Buduj paski boczne stron i warstw z PageListRoot, LayerTreeRoot i stanem selekcji.
+description: Panele boczne ze stronami i warstwami oparte na PageListRoot, LayerTreeRoot i stanie zaznaczenia.
 ---
 
 # Panele nawigacyjne
 
-Paski boczne OpenPencil zazwyczaj łączą dwa obszary:
+Panele boczne OpenPencil zwykle zawierają:
 
-- nawigację po stronach
-- nawigację po warstwach
+- listę stron;
+- drzewo warstw.
 
-Vue SDK udostępnia bezstanowe prymitywy dla obu.
+Vue SDK udostępnia komponenty bez narzuconego wyglądu dla obu zastosowań.
 
-## Nawigacja po stronach
+## Strony
 
-Użyj `PageListRoot` lub `usePageList()`.
+Użyj `PageListRoot` albo `usePageList()`.
 
 ```vue
-<PageListRoot v-slot="{ pages, currentPageId, switchPage, addPage }">
+<PageListRoot v-slot="{ pages, currentPageId, actions }">
   <div>
-    <button v-for="page in pages" :key="page.id" @click="switchPage(page.id)">
+    <button v-for="page in pages" :key="page.id" @click="actions.switch(page.id)">
       {{ page.name }}
     </button>
-    <button @click="addPage()">Nowa strona</button>
+    <button @click="actions.add()">Nowa strona</button>
   </div>
 </PageListRoot>
 ```
 
-## Nawigacja po warstwach
+## Warstwy
 
-Użyj `LayerTreeRoot`, gdy chcesz strukturę drzewa zarządzaną przez SDK, ale prezentację należącą do aplikacji.
+Użyj `LayerTreeRoot`, jeśli SDK ma zarządzać strukturą drzewa, a aplikacja jego wyglądem.
 
 ```vue
-<LayerTreeRoot v-slot="{ items, selectedIds, select, toggleExpand, getKey, getChildren }">
-  <TreeView
-    :items="items"
-    :selected-ids="selectedIds"
-    :get-key="getKey"
-    :get-children="getChildren"
-    @select="select"
-    @toggle-expand="toggleExpand"
-  />
+<LayerTreeRoot v-slot="{ visibleRows }">
+  <LayerTreeItem
+    v-for="row in visibleRows"
+    :key="row.node.id"
+    v-slot="{ node, isSelected, padLeft, actions }"
+    :node="row.node"
+    :level="row.level"
+    :has-children="row.hasChildren"
+  >
+    <button
+      :data-selected="isSelected"
+      :style="{ paddingLeft: padLeft }"
+      @click="actions.select($event.shiftKey)"
+    >
+      {{ node.name }}
+    </button>
+  </LayerTreeItem>
 </LayerTreeRoot>
 ```
 
-## Praktyczny wzorzec
+## Typowy układ
 
-Popularny layout to:
+- lista stron w górnej części panelu bocznego;
+- drzewo warstw poniżej;
+- dodatkowe informacje i pole zmiany nazwy bezpośrednio w komponentach wierszy.
 
-- strony u góry paska bocznego
-- warstwy poniżej
-- szczegóły lub kontrolki inline zmiany nazwy osadzone w komponentach wierszy
-
-## Powiązane API
+## Zobacz też
 
 - [usePageList](../api/composables/use-page-list)
 - [PageListRoot](../api/components/page-list-root)

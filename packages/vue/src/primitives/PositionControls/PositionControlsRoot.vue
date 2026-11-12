@@ -1,50 +1,37 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-
-import { MIXED, useNodeProps } from '#vue/controls/node-props/use'
+import { MIXED } from '#vue/controls/node-props/use'
+import { usePosition } from '#vue/controls/position/use'
 
 const {
   updateProp,
   commitProp,
-  node,
-  nodes,
+  cancelProp,
+  ids,
+  align,
+  flip,
+  rotate,
   isMulti,
   active,
-  prop: multiProp,
-  store
-} = useNodeProps()
+  panelProp,
+  rotates,
+  inAutoLayout,
+  ignoresAutoLayout,
+  toggleIgnoreAutoLayout
+} = usePosition()
 
-const xValue = computed(() =>
-  isMulti.value ? multiProp('x').value : Math.round(node.value?.x ?? 0)
-)
-const yValue = computed(() =>
-  isMulti.value ? multiProp('y').value : Math.round(node.value?.y ?? 0)
-)
-const wValue = multiProp('width')
-const hValue = multiProp('height')
-const rotationValue = computed(() =>
-  isMulti.value ? multiProp('rotation').value : Math.round(node.value?.rotation ?? 0)
-)
-const ids = computed(() => nodes.value.map((n) => n.id))
-
-function align(axis: 'horizontal' | 'vertical', pos: 'min' | 'center' | 'max') {
-  store.alignNodes(ids.value, axis, pos)
-}
-
-function flip(axis: 'horizontal' | 'vertical') {
-  store.flipNodes(ids.value, axis)
-}
-
-function rotate(degrees: number) {
-  store.rotateNodes(ids.value, degrees)
-}
-
+const xValue = panelProp('x')
+const yValue = panelProp('y')
+const wValue = panelProp('width')
+const hValue = panelProp('height')
+const rotationValue = panelProp('rotation')
 const actions = {
   updateProp,
   commitProp,
+  cancelProp,
   align,
   flip,
-  rotate
+  rotate,
+  toggleIgnoreAutoLayout
 }
 </script>
 
@@ -58,6 +45,9 @@ const actions = {
     :w-value="wValue"
     :h-value="hValue"
     :rotation-value="rotationValue"
+    :rotates="rotates"
+    :in-auto-layout="inAutoLayout"
+    :ignores-auto-layout="ignoresAutoLayout"
     :mixed="MIXED"
     :actions="actions"
   />

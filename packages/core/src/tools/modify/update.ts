@@ -1,38 +1,89 @@
-import type { SceneNode } from '#core/scene-graph'
-import { defineTool, nodeNotFound } from '#core/tools/schema'
+import * as v from 'valibot'
+
+import type { SceneNode } from '@open-pencil/scene-graph'
+import { styleDetachmentChanges } from '@open-pencil/scene-graph/shared-styles'
+
+import { assertNodeEditable } from '#core/editor/capabilities'
+import type { FigmaNodeProxy } from '#core/figma-api'
+import { graphOf } from '#core/figma-api/graph'
+import { toolNumber, nodeIdInputSchema, defineTool, nodeNotFound } from '#core/tools/schema'
+
+/** The size of a layer and how auto layout or its text sizes it, which a resize may change. */
+function sizing(node: FigmaNodeProxy) {
+  return {
+    width: node.width,
+    height: node.height,
+    layoutSizingHorizontal: node.layoutSizingHorizontal,
+    layoutSizingVertical: node.layoutSizingVertical,
+    textAutoResize: node.textAutoResize
+  }
+}
+
+/**
+ * Resizes a layer and names what the resize changed: a layer inside an instance keeps its size,
+ * as in Figma, while an auto layout frame or a text given its own size stops sizing itself.
+ */
+function resized(node: FigmaNodeProxy, width = node.width, height = node.height): string[] {
+  const before = sizing(node)
+  node.resize(width, height)
+  const after = sizing(node)
+  const changed = after.width !== before.width || after.height !== before.height ? ['size'] : []
+  for (const key of ['layoutSizingHorizontal', 'layoutSizingVertical', 'textAutoResize'] as const)
+    if (after[key] !== before[key]) changed.push(key)
+  return changed
+}
 
 export const updateNode = defineTool({
   name: 'update_node',
-  mutates: true,
+
   description:
-    'Update properties of an existing node: position, size, opacity, corner radius, visibility, text, font.',
-  params: {
-    id: { type: 'string', description: 'Node ID', required: true },
-    x: { type: 'number', description: 'X position' },
-    y: { type: 'number', description: 'Y position' },
-    width: { type: 'number', description: 'Width', min: 1 },
-    height: { type: 'number', description: 'Height', min: 1 },
-    opacity: { type: 'number', description: 'Opacity (0-1)', min: 0, max: 1 },
-    corner_radius: { type: 'number', description: 'Corner radius', min: 0 },
-    visible: { type: 'boolean', description: 'Visibility' },
-    text: { type: 'string', description: 'Text content (TEXT nodes)' },
-    text_direction: {
-      type: 'string',
-      description: 'Text direction for TEXT nodes',
-      enum: ['AUTO', 'LTR', 'RTL']
-    },
-    flow_direction: {
-      type: 'string',
-      description: 'Auto-layout flow direction for FRAME nodes',
-      enum: ['AUTO', 'LTR', 'RTL']
-    },
-    font_size: { type: 'number', description: 'Font size', min: 1 },
-    font_weight: { type: 'number', description: 'Font weight (100-900)' },
-    name: { type: 'string', description: 'Layer name' }
-  },
+    'Update properties of an existing node: position, size, rotation, opacity, corner radius, visibility, lock, name, text, font.',
+  execution: { kind: 'sync', mutation: 'properties' },
+  input: v.strictObject({
+    id: nodeIdInputSchema,
+    x: v.optional(toolNumber(v.pipe(v.number(), v.description('X position')))),
+    y: v.optional(toolNumber(v.pipe(v.number(), v.description('Y position')))),
+    width: v.optional(toolNumber(v.pipe(v.number(), v.minValue(1), v.description('Width')))),
+    height: v.optional(toolNumber(v.pipe(v.number(), v.minValue(1), v.description('Height')))),
+    rotation: v.optional(toolNumber(v.pipe(v.number(), v.description('Rotation in degrees')))),
+    opacity: v.optional(
+      toolNumber(v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description('Opacity (0-1)')))
+    ),
+    corner_radius: v.optional(
+      toolNumber(v.pipe(v.number(), v.minValue(0), v.description('Corner radius')))
+    ),
+    visible: v.optional(v.pipe(v.boolean(), v.description('Visibility'))),
+    locked: v.optional(v.pipe(v.boolean(), v.description('Locked'))),
+    text: v.optional(v.pipe(v.string(), v.description('Text content (TEXT nodes)'))),
+    text_direction: v.optional(
+      v.pipe(v.picklist(['AUTO', 'LTR', 'RTL']), v.description('Text direction for TEXT nodes'))
+    ),
+    flow_direction: v.optional(
+      v.pipe(
+        v.picklist(['AUTO', 'LTR', 'RTL']),
+        v.description('Auto-layout flow direction for FRAME nodes')
+      )
+    ),
+    font_size: v.optional(
+      toolNumber(v.pipe(v.number(), v.minValue(1), v.description('Font size')))
+    ),
+    font_weight: v.optional(
+      toolNumber(
+        v.pipe(v.number(), v.minValue(100), v.maxValue(900), v.description('Font weight (100-900)'))
+      )
+    ),
+    name: v.optional(v.pipe(v.string(), v.description('Layer name')))
+  }),
   execute: (figma, args) => {
     const node = figma.getNodeById(args.id)
     if (!node) return nodeNotFound(args.id)
+    assertNodeEditable(graphOf(figma), args.id)
+    // Written to the layer directly, since the plugin setters need a loaded font; an edit to a
+    // text style's field leaves the style, as the editor's updates do.
+    const editTypography = (changes: Partial<SceneNode>) => {
+      const scene = graphOf(figma).getNode(args.id)
+      if (scene) graphOf(figma).updateNode(args.id, styleDetachmentChanges(scene, changes))
+    }
     const updated: string[] = []
     if (args.x !== undefined) {
       node.x = args.x
@@ -42,9 +93,11 @@ export const updateNode = defineTool({
       node.y = args.y
       updated.push('y')
     }
-    if (args.width !== undefined || args.height !== undefined) {
-      node.resize(args.width ?? node.width, args.height ?? node.height)
-      updated.push('size')
+    if (args.width !== undefined || args.height !== undefined)
+      updated.push(...resized(node, args.width, args.height))
+    if (args.rotation !== undefined) {
+      node.rotation = args.rotation
+      updated.push('rotation')
     }
     if (args.opacity !== undefined) {
       node.opacity = args.opacity
@@ -58,32 +111,36 @@ export const updateNode = defineTool({
       node.visible = args.visible
       updated.push('visible')
     }
+    if (args.locked !== undefined) {
+      node.locked = args.locked
+      updated.push('locked')
+    }
     if (args.name !== undefined) {
       node.name = args.name
       updated.push('name')
     }
     if (args.text !== undefined) {
-      figma.graph.updateNode(node.id, { text: args.text })
+      graphOf(figma).updateNode(node.id, { text: args.text })
       updated.push('text')
     }
     if (args.text_direction !== undefined) {
-      figma.graph.updateNode(node.id, {
-        textDirection: args.text_direction as SceneNode['textDirection']
+      graphOf(figma).updateNode(node.id, {
+        textDirection: args.text_direction
       })
       updated.push('textDirection')
     }
     if (args.flow_direction !== undefined) {
-      figma.graph.updateNode(node.id, {
-        layoutDirection: args.flow_direction as SceneNode['layoutDirection']
+      graphOf(figma).updateNode(node.id, {
+        layoutDirection: args.flow_direction
       })
       updated.push('layoutDirection')
     }
     if (args.font_size !== undefined) {
-      figma.graph.updateNode(node.id, { fontSize: args.font_size })
+      editTypography({ fontSize: args.font_size })
       updated.push('fontSize')
     }
     if (args.font_weight !== undefined) {
-      figma.graph.updateNode(node.id, { fontWeight: args.font_weight })
+      editTypography({ fontWeight: args.font_weight })
       updated.push('fontWeight')
     }
     return { id: args.id, updated }

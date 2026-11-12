@@ -1,0 +1,54 @@
+import { params } from '@nanostores/i18n'
+
+import { i18n } from '#vue/i18n/create'
+
+export const commonMessageDefaults = {
+  cancel: 'Cancel',
+  apply: 'Apply',
+  close: 'Close',
+  ok: 'OK',
+  copy: 'Copy',
+  copied: 'Copied',
+  learnMore: 'Learn more',
+  copiedExclamation: 'Copied!',
+  copyMessage: 'Copy message',
+  paste: 'Paste',
+  lastUpdated: 'Last updated',
+  enabled: 'Enabled',
+  disabled: 'Disabled',
+  denied: 'Denied',
+  unavailable: 'Unavailable',
+  notRequested: 'Not requested',
+  never: 'Never',
+  allow: 'Allow',
+  requesting: 'Requesting…',
+  enable: 'Enable',
+  disable: 'Disable',
+  download: 'Download',
+  downloading: 'Downloading…',
+  refresh: 'Refresh',
+  you: 'You',
+  youSuffix: 'you',
+  connect: 'Connect',
+  showPassword: 'Show password',
+  hidePassword: 'Hide password',
+  testConnection: 'Test connection',
+  testingConnection: 'Testing…',
+  search: 'Search…',
+  noResults: 'No results',
+  save: 'Save',
+  done: 'Done',
+  /** The accessible name of a task list's checkbox in rendered Markdown. */
+  task: 'Task',
+  back: 'Back',
+  supported: 'Supported',
+  unsupported: 'Not supported',
+  tokens: 'tokens',
+  clear: 'Clear',
+  dismiss: 'Dismiss',
+  browserSupport: 'Check browser support',
+  /** Above a field that waits for a name or address typed out before something is deleted. */
+  typeToConfirm: params('To confirm, type “{text}”.')
+} as const
+
+export const commonMessages = i18n('common', commonMessageDefaults)

@@ -1,47 +1,42 @@
 ---
-title: Niestandardowa powłoka edytora
-description: Zbuduj własną powłokę edytora z provideEditor, CanvasRoot, menu, panelami i paskami narzędzi.
+title: Własny interfejs edytora
+description: Tworzenie własnego interfejsu edytora za pomocą provideEditor, CanvasRoot, menu, paneli i pasków narzędzi.
 ---
 
-# Niestandardowa powłoka edytora
+# Własny interfejs edytora
 
-Typowa aplikacja Vue z OpenPencil ma trzy warstwy:
+Typowa aplikacja OpenPencil oparta na Vue składa się z trzech warstw:
 
-1. `@open-pencil/core` tworzy edytor
-2. `@open-pencil/vue` adaptuje go do kompozytów Vue i bezstanowych prymitywów
-3. twoja aplikacja renderuje powłokę, stylowanie i UX specyficzny dla produktu
+1. `@open-pencil/core` tworzy edytor;
+2. `@open-pencil/vue` łączy go z composables i komponentami Vue bez narzuconego wyglądu;
+3. aplikacja określa układ, wygląd i zachowanie właściwe dla produktu.
 
-## Dlaczego to ważne
+## Dlaczego warto rozdzielić te warstwy
 
-Wbudowana aplikacja OpenPencil to tylko jedna możliwa powłoka.
+Gotowa aplikacja OpenPencil jest tylko jednym z możliwych interfejsów.
 
-Możesz zbudować zupełnie inną dla skupionego przepływu pracy: edytor wbudowany w inny produkt, wewnętrzne narzędzie do zasobów, edytor szablonów, UI do adnotacji lub powierzchnię edycji wspomaganą AI z niestandardowymi kontrolkami.
+Na podstawie SDK można utworzyć edytor osadzony w innym produkcie, wewnętrzne narzędzie do pracy z zasobami, edytor szablonów, interfejs do adnotacji albo wyspecjalizowany edytor z obsługą AI.
 
-To główny powód, dla którego SDK istnieje.
+## Zalecana struktura
 
-## Zalecana kompozycja
+Wygodny interfejs zwykle:
 
-Praktyczna powłoka często wygląda tak:
-
-- dostawca na górze z `provideEditor()`
-- kanvas w środku
-- nawigacja strony/warstwy po jednej stronie
-- właściwości po drugiej stronie
-- menu i paski narzędzi napędzane przez kompozyty
+- wywołuje `provideEditor()` wysoko w drzewie komponentów;
+- umieszcza obszar roboczy pośrodku;
+- pokazuje strony i warstwy na jednym panelu bocznym;
+- pokazuje właściwości na drugim panelu;
+- steruje menu i paskami narzędzi za pomocą composables.
 
 ## Przykład
 
 ```vue
 <script setup lang="ts">
-import { createEditor } from '@open-pencil/core/editor'
-import {
-  provideEditor,
-  CanvasRoot,
-  CanvasSurface,
-  ToolbarRoot,
-  PageListRoot,
-  LayerTreeRoot,
-} from '@open-pencil/vue'
+import { createEditor } from '@open-pencil/core'
+import { provideEditor } from '@open-pencil/vue'
+import { CanvasRoot, CanvasSurface } from '@open-pencil/vue/canvas'
+import { ToolbarRoot } from '@open-pencil/vue/primitives/Toolbar'
+import { PageListRoot } from '@open-pencil/vue/primitives/PageList'
+import { LayerTreeRoot } from '@open-pencil/vue/primitives/LayerTree'
 
 const editor = createEditor({ width: 1440, height: 900 })
 provideEditor(editor)
@@ -63,13 +58,13 @@ provideEditor(editor)
     </ToolbarRoot>
 
     <aside class="border-r">
-      <PageListRoot v-slot="{ pages, currentPageId, switchPage }">
+      <PageListRoot v-slot="{ pages, currentPageId, actions }">
         <nav>
           <button
             v-for="page in pages"
             :key="page.id"
             :data-active="page.id === currentPageId"
-            @click="switchPage(page.id)"
+            @click="actions.switch(page.id)"
           >
             {{ page.name }}
           </button>
@@ -84,19 +79,19 @@ provideEditor(editor)
     </main>
 
     <aside class="border-l">
-      Panel właściwości tutaj
+      Panel właściwości
     </aside>
   </div>
 </template>
 ```
 
-## Dlaczego ten podział działa
+## Odpowiedzialność SDK i aplikacji
 
-- SDK odpowiada za integrację edytora i wielokrotnie używalną logikę bezstanową
-- twoja aplikacja odpowiada za layout, stylowanie i akcje specyficzne dla produktu
-- kompozyty mogą napędzać menu i panele bez dodatkowych komponentów opakowujących
+- SDK odpowiada za integrację z edytorem i logikę niezależną od wyglądu, przeznaczoną do ponownego użycia.
+- Aplikacja odpowiada za układ, wygląd i operacje właściwe dla konkretnego produktu.
+- Composables pozwalają podłączać menu i panele bez zbędnych komponentów opakowujących.
 
-## Powiązane API
+## Zobacz też
 
 - [provideEditor](../api/composables/provide-editor)
 - [useCanvas](../api/composables/use-canvas)

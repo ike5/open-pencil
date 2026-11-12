@@ -1,22 +1,30 @@
 <script setup lang="ts">
-import { PopoverContent, PopoverPortal, PopoverRoot, PopoverTrigger } from 'reka-ui'
+import { PopoverContent, PopoverPortal, PopoverTrigger } from 'reka-ui'
+import { tv } from 'tailwind-variants'
 
-import { initials } from '@/app/shell/ui'
-import { colorToCSS } from '@open-pencil/core/color'
+import HudButton from '@/components/mobile-hud/HudButton.vue'
 import { useMobileHudContext } from '@/components/MobileHud/context'
+import AvatarStack from '@/components/presence/AvatarStack.vue'
+import PresenceList from '@/components/presence/PresenceList.vue'
+import AppButton from '@/components/ui/button/AppButton.vue'
+import AppPopoverRoot from '@/components/ui/overlay/AppPopoverRoot.vue'
+import presencePopoverTheme from '@/theme/mobile/presence-popover'
+
+const presencePopover = tv(presencePopoverTheme)
 
 const hud = useMobileHudContext()
+const styles = presencePopover()
 </script>
 
 <template>
-  <PopoverRoot v-if="hud.collabState.connected">
+  <AppPopoverRoot v-if="hud.collabState.inRoom">
     <PopoverTrigger as-child>
-      <button
-        class="flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-white/10 bg-panel/70 px-3 shadow-md backdrop-blur-xl select-none active:bg-hover"
-      >
-        <span class="size-2 rounded-full bg-green-500" />
-        <span class="text-xs text-surface">Online: {{ hud.onlineCount }}</span>
-      </button>
+      <HudButton :label="hud.peopleLabel" data-test-id="mobile-presence" :class="styles.trigger()">
+        <span :class="styles.summary()">
+          <span :class="styles.dot()" :data-status="hud.collabState.status" />
+          <AvatarStack :people="hud.people" :max="4" />
+        </span>
+      </HudButton>
     </PopoverTrigger>
     <PopoverPortal>
       <PopoverContent
@@ -24,50 +32,27 @@ const hud = useMobileHudContext()
         :side-offset="8"
         side="bottom"
         align="center"
-        class="z-50 w-56 rounded-xl border border-border bg-panel p-3 shadow-xl"
+        :class="styles.content()"
+        @open-auto-focus.prevent
       >
-        <div class="mb-2 text-[11px] tracking-wider text-muted uppercase">In this room</div>
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center gap-2">
-            <div
-              class="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-              :style="{ background: colorToCSS(hud.collabState.localColor) }"
-            >
-              {{ initials(hud.collabState.localName || 'You') }}
-            </div>
-            <span class="min-w-0 flex-1 truncate text-xs text-surface">
-              {{ hud.collabState.localName || 'You' }}
-            </span>
-            <span class="text-[10px] text-muted">you</span>
-          </div>
-
-          <div
-            v-for="peer in hud.collabPeers"
-            :key="peer.clientId"
-            class="flex cursor-pointer items-center gap-2 rounded-md px-0.5 py-0.5 select-none active:bg-hover"
-            @click="hud.toggleFollowPeer(peer.clientId)"
-          >
-            <div
-              class="flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
-              :class="hud.followingPeer === peer.clientId ? 'ring-2 ring-white/40' : ''"
-              :style="{ background: colorToCSS(peer.color) }"
-            >
-              {{ initials(peer.name) }}
-            </div>
-            <span class="min-w-0 flex-1 truncate text-xs text-surface">{{ peer.name }}</span>
-            <span v-if="hud.followingPeer === peer.clientId" class="text-[10px] text-accent">
-              following
-            </span>
-          </div>
-        </div>
-
-        <button
-          class="mt-3 flex h-7 w-full cursor-pointer items-center justify-center rounded border border-border bg-transparent text-xs text-muted select-none active:bg-hover"
+        <p class="mb-2 text-xs text-surface" data-test-id="mobile-room-status">
+          {{ hud.statusText }}
+        </p>
+        <PresenceList
+          :rows="hud.people"
+          :following="hud.following"
+          @follow="hud.follow"
+          @rename="hud.renameAgent"
+        />
+        <AppButton
+          v-if="hud.collabState.canLeave"
+          variant="outline"
+          class="mt-3 w-full"
           @click="hud.disconnect"
         >
-          Disconnect
-        </button>
+          {{ hud.messages.disconnect }}
+        </AppButton>
       </PopoverContent>
     </PopoverPortal>
-  </PopoverRoot>
+  </AppPopoverRoot>
 </template>

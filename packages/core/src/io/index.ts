@@ -1,29 +1,26 @@
 export { IORegistry } from './registry'
-export { extractExportGraph } from './subgraph'
+export { extractExportGraph, findPageId } from './subgraph'
 export {
   BUILTIN_IO_FORMATS,
+  type BuiltinIOFormatId,
+  DOCUMENT_EXTENSIONS,
   figFormat,
   penFormat,
   pngFormat,
   jpgFormat,
   webpFormat,
   svgFormat,
-  jsxFormat
+  jsxFormat,
+  htmlFormat,
+  tailwindJSXFormat
 } from './formats'
-export { exportFigFile, parseFigFile, readFigFile } from './formats/fig'
-export { parsePenFile, readPenFile } from './formats/pen'
-export { sceneNodeToJSX, selectionToJSX, type JSXFormat } from './formats/jsx'
+export { vectorElement } from './formats/html/vectors'
 export {
-  computeContentBounds,
-  renderNodesToImage,
-  renderThumbnail,
-  initCanvasKit,
-  headlessRenderNodes,
-  headlessRenderThumbnail,
-  type RasterExportFormat,
-  type ExportFormat
-} from './formats/raster'
-export { renderNodesToSVG, geometryBlobToSVGPath, vectorNetworkToSVGPaths } from './formats/svg'
+  renderNodesToPPTX,
+  type PPTXExportOptions,
+  type PPTXExportStats,
+  type PPTXRasterize
+} from './formats/pptx'
 export type {
   IOFormatRole,
   IOFormatCategory,
@@ -35,12 +32,13 @@ export type {
   ReadDocumentResult,
   ExportTarget,
   ExportRequest,
+  ExportAsset,
   ExportResult,
+  HTMLExportOptions,
   IOContext,
   FigWriteOptions,
   RasterExportOptions,
   SVGExportOptions,
-  JSXExportOptions,
   IOFormatSupport,
   IOFormatExportOptions,
   IOFormatAdapter

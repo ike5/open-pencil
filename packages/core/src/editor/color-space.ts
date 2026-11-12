@@ -1,7 +1,6 @@
-import { resolveOkHCLForPreview } from '#core/color/management'
-import { rgbaToOkHCL } from '#core/color/okhcl'
-import type { DocumentColorSpace, SceneNode } from '#core/scene-graph'
-import { copyEffects, copyFill, copyStyleRuns, copyStroke } from '#core/scene-graph/copy'
+import type { DocumentColorSpace, SceneNode } from '@open-pencil/scene-graph'
+import { resolveOkHCLForPreview, rgbaToOkHCL } from '@open-pencil/scene-graph/color'
+import { copyEffects, copyFill, copyStyleRuns, copyStroke } from '@open-pencil/scene-graph/copy'
 
 import type { EditorContext } from './types'
 
@@ -82,6 +81,10 @@ export function createColorSpaceActions(ctx: EditorContext) {
     }
 
     ctx.graph.documentColorSpace = colorSpace
+    // Assigning a profile changes how every stored colour draws without touching a node, so the
+    // renderers' pictures and tiles are rebuilt rather than kept for the new generation.
+    for (const renderer of ctx.getRenderers()) renderer.invalidateAllPictures()
+    ctx.emitEditorEvent('document:color-space-changed', colorSpace)
     ctx.requestRender()
   }
 

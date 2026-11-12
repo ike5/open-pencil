@@ -8,18 +8,29 @@ export interface SidebarLabels {
   shapes: string
   text: string
   pen: string
+  vectorEditing: string
+  icons: string
+  photos: string
   layers: string
   contextMenu: string
   exporting: string
   autoLayout: string
   components: string
   variables: string
-  guide: string
+  checkingDesigns: string
+  openPencilCloud: string
+  cloudStorage: string
+  overview: string
   gettingStarted: string
   features: string
   architecture: string
   techStack: string
   comparison: string
+  privacy: string
+  cloudLegal: string
+  cloudTerms: string
+  cloudPrivacy: string
+  subprocessors: string
   figmaMatrix: string
 }
 
@@ -29,6 +40,8 @@ export interface ProgrammableLabels {
   inspecting: string
   exporting: string
   analyzing: string
+  comparing: string
+  appControl: string
   scripting: string
   jsxRenderer: string
   mcpServer: string
@@ -37,7 +50,7 @@ export interface ProgrammableLabels {
 }
 
 export interface NavLabels {
-  guide: string
+  overview: string
   userGuide: string
   programmable: string
   sdk: string
@@ -52,6 +65,8 @@ export const EN_PROG: ProgrammableLabels = {
   inspecting: 'Inspecting Files',
   exporting: 'Exporting',
   analyzing: 'Analyzing Designs',
+  comparing: 'Comparing Designs',
+  appControl: 'Controlling the App',
   scripting: 'Scripting',
   jsxRenderer: 'JSX Renderer',
   mcpServer: 'MCP Server',
@@ -64,6 +79,8 @@ export const DE_PROG: ProgrammableLabels = {
   inspecting: 'Dateien inspizieren',
   exporting: 'Exportieren',
   analyzing: 'Designs analysieren',
+  comparing: 'Designs vergleichen',
+  appControl: 'App steuern',
   scripting: 'Skripte',
   jsxRenderer: 'JSX-Renderer',
   mcpServer: 'MCP-Server',
@@ -76,6 +93,8 @@ export const IT_PROG: ProgrammableLabels = {
   inspecting: 'Ispezione file',
   exporting: 'Esportazione',
   analyzing: 'Analisi design',
+  comparing: 'Confronto dei design',
+  appControl: 'Controllare l’app',
   scripting: 'Scripting',
   jsxRenderer: 'Renderer JSX',
   mcpServer: 'Server MCP',
@@ -88,6 +107,8 @@ export const FR_PROG: ProgrammableLabels = {
   inspecting: 'Inspecter les fichiers',
   exporting: 'Exporter',
   analyzing: 'Analyser les designs',
+  comparing: 'Comparer des designs',
+  appControl: 'Piloter l’application',
   scripting: 'Scripts',
   jsxRenderer: 'Moteur JSX',
   mcpServer: 'Serveur MCP',
@@ -100,6 +121,8 @@ export const ES_PROG: ProgrammableLabels = {
   inspecting: 'Inspeccionar archivos',
   exporting: 'Exportar',
   analyzing: 'Analizar diseños',
+  comparing: 'Comparar diseños',
+  appControl: 'Controlar la app',
   scripting: 'Scripts',
   jsxRenderer: 'Renderizador JSX',
   mcpServer: 'Servidor MCP',
@@ -112,6 +135,8 @@ export const PL_PROG: ProgrammableLabels = {
   inspecting: 'Inspekcja plików',
   exporting: 'Eksportowanie',
   analyzing: 'Analiza projektów',
+  comparing: 'Porównywanie projektów',
+  appControl: 'Sterowanie aplikacją',
   scripting: 'Skrypty',
   jsxRenderer: 'Renderer JSX',
   mcpServer: 'Serwer MCP',
@@ -124,6 +149,8 @@ export const RU_PROG: ProgrammableLabels = {
   inspecting: 'Инспекция файлов',
   exporting: 'Экспорт',
   analyzing: 'Анализ дизайна',
+  comparing: 'Сравнение дизайнов',
+  appControl: 'Управление приложением',
   scripting: 'Скрипты',
   jsxRenderer: 'JSX-рендерер',
   mcpServer: 'MCP-сервер',
@@ -141,18 +168,29 @@ export const EN: SidebarLabels = {
   shapes: 'Drawing Shapes',
   text: 'Text Editing',
   pen: 'Pen Tool',
+  vectorEditing: 'Vector Editing',
   layers: 'Layers & Pages',
   contextMenu: 'Context Menu',
   exporting: 'Exporting',
   autoLayout: 'Auto Layout',
   components: 'Components',
   variables: 'Variables',
-  guide: 'Guide',
+  checkingDesigns: 'Checking Designs',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Cloud Storage',
+  icons: 'Icons',
+  photos: 'Photos',
+  overview: 'Overview',
   gettingStarted: 'Getting Started',
   features: 'Features',
   architecture: 'Architecture',
   techStack: 'Tech Stack',
   comparison: 'Comparison',
+  privacy: 'Privacy',
+  cloudLegal: 'OpenPencil Cloud legal',
+  cloudTerms: 'Terms of Service',
+  cloudPrivacy: 'Privacy Policy',
+  subprocessors: 'Subprocessors',
   figmaMatrix: 'Figma Feature Matrix'
 }
 export const DE: SidebarLabels = {
@@ -165,18 +203,29 @@ export const DE: SidebarLabels = {
   shapes: 'Formen zeichnen',
   text: 'Textbearbeitung',
   pen: 'Stiftwerkzeug',
+  vectorEditing: 'Vektorbearbeitung',
   layers: 'Ebenen & Seiten',
   contextMenu: 'Kontextmenü',
   exporting: 'Exportieren',
   autoLayout: 'Auto-Layout',
   components: 'Komponenten',
   variables: 'Variablen',
-  guide: 'Anleitung',
+  checkingDesigns: 'Designs prüfen',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Cloud-Speicher',
+  icons: 'Symbole',
+  photos: 'Fotos',
+  overview: 'Überblick',
   gettingStarted: 'Erste Schritte',
   features: 'Funktionen',
   architecture: 'Architektur',
   techStack: 'Tech-Stack',
   comparison: 'Vergleich',
+  privacy: 'Datenschutz',
+  cloudLegal: 'OpenPencil Cloud – Rechtliches',
+  cloudTerms: 'Nutzungsbedingungen',
+  cloudPrivacy: 'Datenschutzerklärung',
+  subprocessors: 'Unterauftragsverarbeiter',
   figmaMatrix: 'Figma-Funktionsmatrix'
 }
 export const IT: SidebarLabels = {
@@ -189,18 +238,29 @@ export const IT: SidebarLabels = {
   shapes: 'Disegno forme',
   text: 'Modifica testo',
   pen: 'Strumento penna',
+  vectorEditing: 'Modifica vettoriale',
   layers: 'Livelli e pagine',
   contextMenu: 'Menu contestuale',
   exporting: 'Esportazione',
   autoLayout: 'Auto-layout',
   components: 'Componenti',
   variables: 'Variabili',
-  guide: 'Guida',
+  checkingDesigns: 'Verificare i design',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Archiviazione cloud',
+  icons: 'Icone',
+  photos: 'Foto',
+  overview: 'Panoramica',
   gettingStarted: 'Per iniziare',
   features: 'Funzionalità',
   architecture: 'Architettura',
   techStack: 'Stack tecnologico',
   comparison: 'Confronto',
+  privacy: 'Privacy',
+  cloudLegal: 'OpenPencil Cloud – Note legali',
+  cloudTerms: 'Termini di servizio',
+  cloudPrivacy: 'Informativa sulla privacy',
+  subprocessors: 'Sub-responsabili',
   figmaMatrix: 'Matrice funzionalità Figma'
 }
 export const FR: SidebarLabels = {
@@ -213,18 +273,29 @@ export const FR: SidebarLabels = {
   shapes: 'Dessiner des formes',
   text: 'Édition de texte',
   pen: 'Outil plume',
+  vectorEditing: 'Édition vectorielle',
   layers: 'Calques et pages',
   contextMenu: 'Menu contextuel',
   exporting: 'Exportation',
   autoLayout: 'Mise en page auto',
   components: 'Composants',
   variables: 'Variables',
-  guide: 'Guide',
+  checkingDesigns: 'Vérifier les designs',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Stockage cloud',
+  icons: 'Icônes',
+  photos: 'Photos',
+  overview: 'Vue d’ensemble',
   gettingStarted: 'Premiers pas',
   features: 'Fonctionnalités',
   architecture: 'Architecture',
   techStack: 'Stack technique',
   comparison: 'Comparaison',
+  privacy: 'Confidentialité',
+  cloudLegal: 'OpenPencil Cloud – Mentions légales',
+  cloudTerms: 'Conditions d’utilisation',
+  cloudPrivacy: 'Politique de confidentialité',
+  subprocessors: 'Sous-traitants',
   figmaMatrix: 'Matrice des fonctionnalités Figma'
 }
 export const ES: SidebarLabels = {
@@ -237,18 +308,29 @@ export const ES: SidebarLabels = {
   shapes: 'Dibujar formas',
   text: 'Edición de texto',
   pen: 'Herramienta pluma',
+  vectorEditing: 'Edición vectorial',
   layers: 'Capas y páginas',
   contextMenu: 'Menú contextual',
   exporting: 'Exportar',
   autoLayout: 'Auto-layout',
   components: 'Componentes',
   variables: 'Variables',
-  guide: 'Guía',
+  checkingDesigns: 'Revisar diseños',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Almacenamiento en la nube',
+  icons: 'Iconos',
+  photos: 'Fotos',
+  overview: 'Resumen',
   gettingStarted: 'Primeros pasos',
   features: 'Características',
   architecture: 'Arquitectura',
   techStack: 'Stack tecnológico',
   comparison: 'Comparación',
+  privacy: 'Privacidad',
+  cloudLegal: 'OpenPencil Cloud – Aviso legal',
+  cloudTerms: 'Términos del servicio',
+  cloudPrivacy: 'Política de privacidad',
+  subprocessors: 'Subencargados',
   figmaMatrix: 'Matriz de funcionalidades Figma'
 }
 export const PL: SidebarLabels = {
@@ -261,18 +343,29 @@ export const PL: SidebarLabels = {
   shapes: 'Rysowanie kształtów',
   text: 'Edycja tekstu',
   pen: 'Narzędzie pióro',
+  vectorEditing: 'Edycja wektorów',
   layers: 'Warstwy i strony',
   contextMenu: 'Menu kontekstowe',
   exporting: 'Eksportowanie',
   autoLayout: 'Auto-layout',
   components: 'Komponenty',
   variables: 'Zmienne',
-  guide: 'Przewodnik',
+  checkingDesigns: 'Sprawdzanie projektów',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Przechowywanie w chmurze',
+  icons: 'Ikony',
+  photos: 'Zdjęcia',
+  overview: 'Przegląd',
   gettingStarted: 'Rozpoczęcie pracy',
   features: 'Funkcje',
   architecture: 'Architektura',
   techStack: 'Stack technologiczny',
   comparison: 'Porównanie',
+  privacy: 'Prywatność',
+  cloudLegal: 'OpenPencil Cloud – Informacje prawne',
+  cloudTerms: 'Warunki korzystania',
+  cloudPrivacy: 'Polityka prywatności',
+  subprocessors: 'Podmioty przetwarzające',
   figmaMatrix: 'Matryca funkcji Figma'
 }
 export const RU: SidebarLabels = {
@@ -285,17 +378,28 @@ export const RU: SidebarLabels = {
   shapes: 'Рисование фигур',
   text: 'Редактирование текста',
   pen: 'Инструмент «Перо»',
+  vectorEditing: 'Редактирование векторов',
   layers: 'Слои и страницы',
   contextMenu: 'Контекстное меню',
   exporting: 'Экспорт',
   autoLayout: 'Авто-раскладка',
   components: 'Компоненты',
   variables: 'Переменные',
-  guide: 'Руководство',
+  checkingDesigns: 'Проверка дизайна',
+  openPencilCloud: 'OpenPencil Cloud',
+  cloudStorage: 'Облачное хранилище',
+  icons: 'Иконки',
+  photos: 'Фото',
+  overview: 'Обзор',
   gettingStarted: 'Начало работы',
   features: 'Возможности',
   architecture: 'Архитектура',
   techStack: 'Технологии',
   comparison: 'Сравнение',
+  privacy: 'Конфиденциальность',
+  cloudLegal: 'OpenPencil Cloud — правовая информация',
+  cloudTerms: 'Условия использования',
+  cloudPrivacy: 'Политика конфиденциальности',
+  subprocessors: 'Субобработчики',
   figmaMatrix: 'Матрица функций Figma'
 }

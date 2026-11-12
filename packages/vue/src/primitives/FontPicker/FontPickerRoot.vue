@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { nextTick } from 'vue'
 import { templateRef, unrefElement } from '@vueuse/core'
 import {
   ComboboxAnchor,
@@ -9,24 +8,36 @@ import {
   ComboboxItemIndicator,
   ComboboxPortal,
   ComboboxRoot,
+  ComboboxTrigger,
   ComboboxVirtualizer,
   ComboboxViewport,
   type AcceptableValue
 } from 'reka-ui'
+import { nextTick, useTemplateRef, watch } from 'vue'
 
+import type { FontFamilyOption } from '@open-pencil/core/text'
+
+import { useRetainedPopup } from '#vue/lifecycle/retention/popup'
+import type { FontPickerUI } from '#vue/primitives/FontPicker/types'
 import { useFontPicker, type FontAccessController } from '#vue/primitives/FontPicker/useFontPicker'
 
-import type { FontPickerUi } from '#vue/primitives/FontPicker/types'
-
-const { listFamilies, localFontAccess, ui, emptySearchText, emptyFontsText, emptyFontsHint } =
-  defineProps<{
-    listFamilies: () => Promise<string[]>
-    localFontAccess?: FontAccessController
-    ui?: FontPickerUi
-    emptySearchText?: string
-    emptyFontsText?: string
-    emptyFontsHint?: string
-  }>()
+const {
+  listFamilies,
+  localFontAccess,
+  ui,
+  searchPlaceholder = 'Search fonts…',
+  emptySearchText,
+  emptyFontsText,
+  emptyFontsHint
+} = defineProps<{
+  listFamilies: () => Promise<string[] | FontFamilyOption[]>
+  localFontAccess?: FontAccessController
+  ui?: FontPickerUI
+  searchPlaceholder?: string
+  emptySearchText?: string
+  emptyFontsText?: string
+  emptyFontsHint?: string
+}>()
 
 const modelValue = defineModel<string>({ required: true })
 const emit = defineEmits<{ select: [family: string] }>()
@@ -47,13 +58,39 @@ const { searchTerm, open, filtered, loading, accessState, requestAccess, select 
   localFontAccess,
   onSelect: (family) => emit('select', family)
 })
+const { portalActive } = useRetainedPopup(open)
+const root = useTemplateRef<{ highlightItem: (value: AcceptableValue) => void }>('root')
+
+// The families arrive after the list opens, too late for Reka's own scroll to the chosen font.
+watch(
+  () => open.value && !loading.value && filtered.value.length > 0,
+  async (ready) => {
+    if (!ready || searchTerm.value) return
+    await nextTick()
+    root.value?.highlightItem(modelValue.value)
+  }
+)
+
+/**
+ * The list holds font options and the value is a family name; Reka compares them to find the
+ * chosen font, so opening scrolls to it.
+ */
+function sameFamily(left: unknown, right: unknown): boolean {
+  return familyOf(left) === familyOf(right)
+}
+
+function familyOf(value: unknown): unknown {
+  return typeof value === 'object' && value !== null && 'family' in value ? value.family : value
+}
 </script>
 
 <template>
   <ComboboxRoot
+    ref="root"
     v-model:open="open"
     :model-value="modelValue"
     :ignore-filter="true"
+    :by="sameFamily"
     @update:model-value="
       (v: AcceptableValue) => {
         if (typeof v === 'string') select(v)
@@ -61,14 +98,16 @@ const { searchTerm, open, filtered, loading, accessState, requestAccess, select 
     "
   >
     <ComboboxAnchor as-child>
-      <slot name="trigger" :value="modelValue" :open="open">
-        <button :class="ui?.trigger">
-          <span class="truncate">{{ modelValue }}</span>
-        </button>
-      </slot>
+      <ComboboxTrigger as-child>
+        <slot name="trigger" :value="modelValue" :open="open">
+          <button :class="ui?.trigger">
+            <span class="truncate">{{ modelValue }}</span>
+          </button>
+        </slot>
+      </ComboboxTrigger>
     </ComboboxAnchor>
 
-    <ComboboxPortal>
+    <ComboboxPortal v-if="portalActive">
       <ComboboxContent
         :side-offset="2"
         align="start"
@@ -81,8 +120,9 @@ const { searchTerm, open, filtered, loading, accessState, requestAccess, select 
         <slot name="search" :search-term="searchTerm">
           <ComboboxInput
             v-model="searchTerm"
+            :display-value="() => ''"
             :class="ui?.search"
-            placeholder="Search fonts…"
+            :placeholder="searchPlaceholder"
             autocomplete="off"
             autocorrect="off"
             autocapitalize="off"
@@ -94,21 +134,26 @@ const { searchTerm, open, filtered, loading, accessState, requestAccess, select 
           <ComboboxVirtualizer
             v-slot="{ option }"
             :options="filtered"
-            :text-content="(family: string) => family"
+            :text-content="(option: FontFamilyOption) => option.family"
             :estimate-size="36"
           >
-            <slot name="item" :family="option" :selected="option === modelValue">
-              <ComboboxItem
-                :value="option"
-                :class="ui?.item"
-                :style="{ fontFamily: `'${option}', sans-serif` }"
+            <ComboboxItem
+              :value="option.family"
+              :class="ui?.item"
+              :style="{ fontFamily: `'${option.family}', sans-serif` }"
+            >
+              <slot
+                name="item"
+                :family="option.family"
+                :source="option.source"
+                :selected="option.family === modelValue"
               >
                 <ComboboxItemIndicator>
-                  <slot name="indicator" :selected="option === modelValue" />
+                  <slot name="indicator" :selected="option.family === modelValue" />
                 </ComboboxItemIndicator>
-                <span class="truncate">{{ option }}</span>
-              </ComboboxItem>
-            </slot>
+                <span class="truncate">{{ option.family }}</span>
+              </slot>
+            </ComboboxItem>
           </ComboboxVirtualizer>
 
           <div v-if="filtered.length === 0 && searchTerm" :class="ui?.empty">

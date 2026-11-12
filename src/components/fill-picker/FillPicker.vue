@@ -1,0 +1,190 @@
+<script setup lang="ts">
+import { PopoverContent, PopoverPortal, PopoverTrigger } from 'reka-ui'
+import { tv } from 'tailwind-variants'
+import { computed } from 'vue'
+
+import type { Fill } from '@open-pencil/scene-graph'
+import type { ShaderPaint, ShaderPreset } from '@open-pencil/scene-graph/shaders'
+import { applySolidFillColor, type OkHCLControls } from '@open-pencil/vue/controls/color-model'
+import { DEFAULT_SHADER_PRESET } from '@open-pencil/vue/controls/shader'
+import { useI18n } from '@open-pencil/vue/i18n'
+import { useRetainedPopup } from '@open-pencil/vue/lifecycle/retention'
+import { pickerOutsideHandlers, type PickerKeepOpen } from '@open-pencil/vue/primitives/ColorPicker'
+import { FillRoot } from '@open-pencil/vue/primitives/Fill'
+
+import ColorPickerPanel from '@/components/color-picker-panel/ColorPickerPanel.vue'
+import { useEyedropperKeepOpen } from '@/components/color-picker-panel/eyedropper'
+import GradientEditor from '@/components/fill-picker/GradientEditor.vue'
+import ImageFillPicker from '@/components/fill-picker/ImageFillPicker.vue'
+import ShaderFillPicker from '@/components/fill-picker/shader/ShaderFillPicker.vue'
+import { useInlineSide } from '@/components/ui/direction/inline-side'
+import AppPopoverRoot from '@/components/ui/overlay/AppPopoverRoot.vue'
+import { usePopoverUI } from '@/components/ui/overlay/popover'
+import Tip from '@/components/ui/overlay/Tip.vue'
+import FillSwatchTrigger from '@/components/ui/paint/FillSwatchTrigger.vue'
+import fillPickerTheme from '@/theme/fill-picker'
+
+import { useImageFill } from './useImageFill'
+
+const startSide = useInlineSide('start')
+const fillPicker = tv(fillPickerTheme)
+
+function tabClass(active: boolean) {
+  return fillPicker({ active }).tab()
+}
+
+const {
+  fill,
+  okhcl = null,
+  swatchBackground,
+  keepOpen,
+  shader = null,
+  layerSize = null
+} = defineProps<{
+  fill: Fill
+  /** The shader the paint draws, when it is a shader's frame; the picker then edits the shader. */
+  shader?: ShaderPaint | null
+  okhcl?: OkHCLControls | null
+  swatchBackground?: string
+  /** Names the trigger for a paint that is not a fill, such as a stroke. */
+  label?: string
+  /** Whether a press outside the picker should leave it open, such as on a gradient handle. */
+  keepOpen?: PickerKeepOpen
+  /** The one layer the paint is on, which an image crop starts by covering. */
+  layerSize?: { width: number; height: number } | null
+}>()
+/** An image fill's swatch shows its image, covering the swatch as Fill would. */
+const image = useImageFill(() => (fill.type === 'IMAGE' ? fill.imageHash : undefined))
+const imageBackground = computed(() =>
+  image.url.value ? `center / cover no-repeat url("${image.url.value}")` : undefined
+)
+const activeStop = defineModel<number>('activeStop')
+const emit = defineEmits<{
+  update: [fill: Fill]
+  updateShader: [preset: ShaderPreset]
+  openChange: [open: boolean]
+  cancel: []
+}>()
+const { open: popupOpen, portalActive } = useRetainedPopup(
+  undefined,
+  () => {
+    emit('cancel')
+    emit('openChange', false)
+  },
+  'picker'
+)
+const cls = usePopoverUI({
+  content: 'max-h-(--reka-popover-content-available-height) w-60 overflow-y-auto p-2'
+})
+const { panels } = useI18n()
+
+/** Dragging a gradient handle or sampling a color on the canvas leaves the picker open. */
+const keepPickerOpen = useEyedropperKeepOpen(() => keepOpen)
+const outside = pickerOutsideHandlers(() => keepPickerOpen)
+</script>
+
+<template>
+  <FillRoot :fill="fill" @update="emit('update', $event)" v-slot="root">
+    <AppPopoverRoot
+      v-model:open="popupOpen"
+      overlay-kind="picker"
+      @update:open="emit('openChange', $event)"
+    >
+      <PopoverTrigger as-child>
+        <FillSwatchTrigger
+          :fill="fill"
+          :label="label ?? panels.fill"
+          :background="swatchBackground ?? imageBackground"
+          data-test-id="fill-picker-swatch"
+        />
+      </PopoverTrigger>
+
+      <PopoverPortal v-if="portalActive">
+        <PopoverContent
+          :class="cls.content"
+          :side-offset="4"
+          :side="startSide"
+          data-picker-content
+          @escape-key-down="emit('cancel')"
+          @pointer-down-outside="outside.onPointerDownOutside"
+          @focus-outside="outside.onFocusOutside"
+        >
+          <div class="mb-2 flex items-center gap-0.5">
+            <Tip :label="panels.solid">
+              <button
+                :data-active="root.category === 'SOLID' || undefined"
+                :class="tabClass(root.category === 'SOLID')"
+                :aria-label="panels.solid"
+                data-test-id="fill-picker-tab-solid"
+                @click="root.actions.toSolid"
+              >
+                <icon-lucide-square class="size-3.5" />
+              </button>
+            </Tip>
+            <Tip :label="panels.linearGradient">
+              <button
+                :data-active="root.category === 'GRADIENT' || undefined"
+                :class="tabClass(root.category === 'GRADIENT')"
+                :aria-label="panels.linearGradient"
+                data-test-id="fill-picker-tab-gradient"
+                @click="root.actions.toGradient"
+              >
+                <icon-lucide-blend class="size-3.5" />
+              </button>
+            </Tip>
+            <Tip :label="panels.image">
+              <button
+                :data-active="(root.category === 'IMAGE' && !shader) || undefined"
+                :class="tabClass(root.category === 'IMAGE' && !shader)"
+                :aria-label="panels.image"
+                data-test-id="fill-picker-tab-image"
+                @click="root.actions.toImage"
+              >
+                <icon-lucide-image class="size-3.5" />
+              </button>
+            </Tip>
+            <Tip :label="panels.shader">
+              <button
+                :data-active="shader !== null || undefined"
+                :class="tabClass(shader !== null)"
+                :aria-label="panels.shader"
+                data-test-id="fill-picker-tab-shader"
+                @click="shader || emit('updateShader', DEFAULT_SHADER_PRESET)"
+              >
+                <icon-lucide-sparkles class="size-3.5" />
+              </button>
+            </Tip>
+          </div>
+
+          <ColorPickerPanel
+            v-if="root.category === 'SOLID'"
+            :color="root.fill.color"
+            :okhcl="okhcl"
+            eyedropper
+            @update="emit('update', applySolidFillColor(root.fill, $event))"
+          />
+
+          <GradientEditor
+            v-if="root.category === 'GRADIENT'"
+            v-model:active-stop="activeStop"
+            :fill="root.fill"
+            @update="emit('update', $event)"
+          />
+
+          <ShaderFillPicker
+            v-if="shader"
+            :preset="shader.preset"
+            @update="emit('updateShader', $event)"
+          />
+
+          <ImageFillPicker
+            v-else-if="root.category === 'IMAGE'"
+            :fill="root.fill"
+            :layer-size="layerSize"
+            @update="emit('update', $event)"
+          />
+        </PopoverContent>
+      </PopoverPortal>
+    </AppPopoverRoot>
+  </FillRoot>
+</template>

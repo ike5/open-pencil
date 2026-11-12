@@ -5,36 +5,38 @@ description: Read localized OpenPencil UI messages and switch the active SDK loc
 
 # useI18n
 
-`useI18n()` returns reactive translation groups plus locale controls for OpenPencil-powered editor shells.
+`useI18n()` is a compatibility aggregate returning reactive translation groups and locale controls. New components should import only the product-domain composables they need, rather than subscribe to every catalog.
 
-Use it when you want SDK-backed labels for menus, commands, panels, pages, and dialogs, or when you need to let users switch locales.
+```ts twoslash
+import { useSettingsMessages, useRenameMessages } from '@open-pencil/vue/i18n'
+
+const settings = useSettingsMessages()
+const rename = useRenameMessages()
+```
+
+Each domain composable returns a reactive ref. Read `.value` in script; Vue unwraps it in templates. See [Locale APIs](../advanced/locale-apis) for locale switching without the aggregate.
 
 ## Usage
 
 ```ts
-import { useI18n } from '@open-pencil/vue'
+import { useI18n } from '@open-pencil/vue/i18n'
 
 const { menu, commands, panels, locale, availableLocales, localeLabels, setLocale } = useI18n()
 ```
 
 ## Returns
 
-- `menu`
-- `commands`
-- `tools`
-- `panels`
-- `pages`
-- `dialogs`
-- `locale`
-- `availableLocales`
-- `localeLabels`
-- `setLocale`
+Translation refs: `ai`, `automation`, `code`, `collaboration`, `commands`, `common`, `credentials`, `diagnostics`, `editor`, `files`, `fonts`, `media`, `menu`, `pages`, `panels`, `recovery`, `rendering`, `rename`, `settings`, `storage`, `tools`, `updates`, `variables`, and `variableTypes`.
+
+Locale controls: `locale`, `availableLocales`, `localeLabels`, and `setLocale`.
+
+The former `dialogs` group, `useDialogMessages()`, and `dialogMessages` are removed in the development version after v0.14.0. Use the owning domain, such as `settings`, `rename`, or `recovery`, and update the corresponding message keys.
 
 ## Basic example
 
 ```vue
 <script setup lang="ts">
-import { useI18n } from '@open-pencil/vue'
+import { useI18n } from '@open-pencil/vue/i18n'
 
 const { menu, locale, availableLocales, localeLabels, setLocale } = useI18n()
 </script>
